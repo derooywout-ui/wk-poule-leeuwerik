@@ -177,7 +177,7 @@ const COLORS = {
 };
 
 function calcToto(h,a){if(+h>+a)return"W";if(+h<+a)return"L";return"D";}
-function deadlinePassed(){return new Date()>DEADLINE;}
+function deadlinePassed(){return localStorage.getItem('deadlineOverride')==='true'||new Date()>DEADLINE;}
 function fmtDeadline(){return DEADLINE.toLocaleString("nl-NL",{day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"});}
 function getMatchId(g,t1,t2){return`${g}-${t1}-${t2}`;}
 
@@ -276,6 +276,21 @@ function MatchCard({grp,t1,t2,homeVal,awayVal,onHomeChange,onAwayChange,disabled
               {totoLabel}
             </span>
           )}
+          {showActions&&disabled&&isSaved&&(
+            <span style={{display:"flex",gap:6,alignItems:"center"}}>
+              <span style={{fontSize:12,color:"#aaa",fontWeight:600}}>✓ Opgeslagen</span>
+              <button disabled style={{
+                background:"none",border:"1px solid #ccc",cursor:"not-allowed",
+                fontSize:11,color:"#ccc",padding:"3px 10px",borderRadius:5,opacity:0.6
+              }}>✏️ Wijzigen</button>
+            </span>
+          )}
+          {showActions&&disabled&&!isSaved&&(
+            <button disabled style={{
+              padding:"4px 14px",borderRadius:6,border:"none",cursor:"not-allowed",
+              background:"#ccc",color:"#fff",fontSize:12,fontWeight:700,opacity:0.6
+            }}>💾 Opslaan</button>
+          )}
           {showActions&&!disabled&&!isSaved&&(
             <button onClick={onSave} style={{
               padding:"4px 14px",borderRadius:6,border:"none",cursor:"pointer",
@@ -312,7 +327,138 @@ function MatchCard({grp,t1,t2,homeVal,awayVal,onHomeChange,onAwayChange,disabled
 }
 
 // ─── MAIN APP ────────────────────────────────────────────────────────────────
-export default function App(){
+export default 
+// ─── LOUIS CHATBOT ────────────────────────────────────────────────────────────
+function LouisChatbot(){
+  const [open,setOpen]=React.useState(false);
+  const [messages,setMessages]=React.useState([]);
+  const [input,setInput]=React.useState("");
+  const [loading,setLoading]=React.useState(false);
+  const bottomRef=React.useRef(null);
+
+  React.useEffect(()=>{
+    if(open&&bottomRef.current) bottomRef.current.scrollIntoView({behavior:"smooth"});
+  },[messages,open]);
+
+  async function send(){
+    const txt=input.trim();
+    if(!txt||loading) return;
+    const newMessages=[...messages,{role:"user",content:txt}];
+    setMessages(newMessages);
+    setInput("");
+    setLoading(true);
+    try{
+      const res=await fetch("/api/chat",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({messages:newMessages}),
+      });
+      const data=await res.json();
+      setMessages(m=>[...m,{role:"assistant",content:data.response||"Geen antwoord van Louis."}]);
+    }catch(e){
+      setMessages(m=>[...m,{role:"assistant",content:"Er ging iets mis. Probeer het opnieuw."}]);
+    }
+    setLoading(false);
+  }
+
+  function handleKey(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}
+
+  return(
+    <>
+      {/* Floating button */}
+      <button
+        onClick={()=>setOpen(o=>!o)}
+        style={{
+          position:"fixed",bottom:20,right:20,zIndex:9999,
+          width:56,height:56,borderRadius:"50%",border:"none",cursor:"pointer",
+          background:COLORS.green,color:"#fff",fontSize:24,
+          boxShadow:"0 4px 16px rgba(0,99,58,0.4)",
+          display:"flex",alignItems:"center",justifyContent:"center",
+        }}
+        title="Vraag het aan Louis"
+      >
+        {open?"✕":"💬"}
+      </button>
+
+      {/* Chat venster */}
+      {open&&(
+        <div style={{
+          position:"fixed",bottom:86,right:20,zIndex:9998,
+          width:340,maxWidth:"calc(100vw - 40px)",
+          background:"#fff",borderRadius:16,
+          boxShadow:"0 8px 32px rgba(0,0,0,0.18)",
+          display:"flex",flexDirection:"column",overflow:"hidden",
+          border:`1px solid ${COLORS.border}`,
+        }}>
+          {/* Header */}
+          <div style={{background:COLORS.green,color:"#fff",padding:"12px 16px",display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:24}}>🧔</span>
+            <div>
+              <div style={{fontWeight:800,fontSize:15}}>Louis</div>
+              <div style={{fontSize:11,opacity:0.8}}>Assistent WK Poule 2026</div>
+            </div>
+          </div>
+
+          {/* Berichten */}
+          <div style={{flex:1,overflowY:"auto",padding:12,maxHeight:320,display:"flex",flexDirection:"column",gap:8}}>
+            {messages.length===0&&(
+              <div style={{fontSize:13,color:COLORS.gray,textAlign:"center",marginTop:16,lineHeight:1.6}}>
+                Hoi! Ik ben Louis.<br/>Stel me een vraag over de WK Poule.
+              </div>
+            )}
+            {messages.map((m,i)=>(
+              <div key={i} style={{
+                alignSelf:m.role==="user"?"flex-end":"flex-start",
+                maxWidth:"85%",
+                background:m.role==="user"?COLORS.green:"#f1f1f1",
+                color:m.role==="user"?"#fff":COLORS.dark,
+                borderRadius:m.role==="user"?"16px 16px 4px 16px":"16px 16px 16px 4px",
+                padding:"8px 12px",fontSize:13,lineHeight:1.5,
+              }}>
+                {m.content}
+              </div>
+            ))}
+            {loading&&(
+              <div style={{alignSelf:"flex-start",background:"#f1f1f1",borderRadius:"16px 16px 16px 4px",padding:"8px 12px",fontSize:13,color:COLORS.gray}}>
+                Louis denkt na…
+              </div>
+            )}
+            <div ref={bottomRef}/>
+          </div>
+
+          {/* Input */}
+          <div style={{padding:"10px 12px",borderTop:`1px solid ${COLORS.border}`,display:"flex",gap:8}}>
+            <input
+              value={input}
+              onChange={e=>setInput(e.target.value)}
+              onKeyDown={handleKey}
+              placeholder="Stel een vraag…"
+              disabled={loading}
+              style={{
+                flex:1,border:`1px solid ${COLORS.border}`,borderRadius:20,
+                padding:"8px 14px",fontSize:13,outline:"none",
+                background:loading?"#f9f9f9":"#fff",
+              }}
+            />
+            <button
+              onClick={send}
+              disabled={loading||!input.trim()}
+              style={{
+                width:36,height:36,borderRadius:"50%",border:"none",
+                background:input.trim()&&!loading?COLORS.green:"#ccc",
+                color:"#fff",cursor:input.trim()&&!loading?"pointer":"default",
+                fontSize:16,flexShrink:0,
+                display:"flex",alignItems:"center",justifyContent:"center",
+              }}
+            >➤</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function App(){
   const [view,setView]=useState("home");
   const [currentUser,setCurrentUser]=useState(null);
   const [isAdmin,setIsAdmin]=useState(false);
@@ -339,7 +485,7 @@ export default function App(){
       db.get("bonus_answers","select=*&limit=10000"),
       db.get("bonus_scores","select=*&limit=10000"),
       db.get("ko_matches","select=*&order=match_num"),
-      db.get("ko_predictions","select=*"),
+      db.get("ko_predictions","select=*&limit=2000"),
       db.get("rankings_snapshot","select=*&order=created_at.desc&limit=200"),
       db.get("news_items","select=*&order=created_at.desc&limit=3"),
       db.get("rss_items","select=*&order=pub_date.desc&limit=5"),
@@ -450,6 +596,7 @@ export default function App(){
 
   return(
     <div style={S.app}>
+      <LouisChatbot/>
       <header style={S.header}>
         <div style={{display:"flex",alignItems:"center",gap:20}}>
           <div style={{display:"flex",flexDirection:"column",justifyContent:"center",lineHeight:1.2}}>
@@ -588,7 +735,7 @@ function KOPredictTab({ctx, currentUser, saving, setSaving, saved, setSaved}){
       headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
       body:JSON.stringify([{participant_id:currentUser.id,match_id:match.id,home_goals:parseInt(p.home),away_goals:parseInt(p.away)}]),
     });
-    const kop=await db.get("ko_predictions","select=*");
+    const kop=await db.get("ko_predictions","select=*&limit=2000");
     if(kop){
       const k={};
       kop.forEach(r=>{if(!k[r.participant_id])k[r.participant_id]={};k[r.participant_id][r.match_id]={home:r.home_goals,away:r.away_goals};});
@@ -788,6 +935,13 @@ function HelpView(){
       {icon:"📈",text:"Op de Homepage zie je ook de sterkste stijger & daler — bijgewerkt na elke officiële uitslag."},
       {icon:"3️⃣",text:"Onderaan de Programma-pagina: stand beste nummers 3 per groep. Verschijnt zodra eerste wedstrijd gespeeld is. De beste 8 nummers 3 gaan door naar de knock-outfase."},
     ]},
+    {num:8,title:"Rangschikking bij gelijke stand",steps:[
+      {icon:"1️⃣",text:"Eerst: totaal aantal punten (poulefase + finalefase + bonus samen)."},
+      {icon:"2️⃣",text:"Dan: het aantal keren de juiste toto voorspeld (winst/gelijk/verlies correct) — zowel poulefase als finalefase tellen mee."},
+      {icon:"3️⃣",text:"Dan: het aantal keren de exacte uitslag correct voorspeld — zowel poulefase als finalefase tellen mee."},
+      {icon:"4️⃣",text:"Dan: totaal behaalde bonuspunten."},
+      {icon:"5️⃣",text:"Zijn al deze criteria nog steeds gelijk? Dan wordt dezelfde positie gedeeld weergegeven in de tussenstand. Alleen bij de definitieve eindstand (prijsuitreiking) geldt als allerlaatste tiebreaker het tijdstip van aanmelding — wie eerder aanmeldde, staat hoger."},
+    ],tip:"Tussentijds kun je dus meerdere deelnemers op dezelfde positie zien staan. Dat is correct!"},
   ];
 
   return(
@@ -969,8 +1123,9 @@ function HomeView({setView,ctx}){
 
       {/* Top 5 klassement */}
       {(()=>{
+        // Hergebruik dezelfde score-logica als StandingsView (incl. juiste puntensysteem)
         function calcScoreHome(uid){
-          let gToto=0,gExact=0,gDoorstoot=0,koToto=0,koExact=0,bonus=0;
+          let gToto=0,gExact=0,gDoorstoot=0,koToto=0,koExact=0,bonus=0,gTotoCount=0,gExactCount=0;
           const pred=ctx.predictions[uid]||{};
           const koPred=ctx.koPredictions[uid]||{};
           Object.entries(ctx.matchResults).forEach(([mid,result])=>{
@@ -978,7 +1133,8 @@ function HomeView({setView,ctx}){
             if(!p||p.home===undefined||p.away===undefined||p.home===""||p.away==="") return;
             const exactOk=parseInt(p.home)===parseInt(result.home)&&parseInt(p.away)===parseInt(result.away);
             const totoOk=calcToto(p.home,p.away)===calcToto(result.home,result.away);
-            if(exactOk)gExact+=5;else if(totoOk)gToto+=3;
+            if(exactOk){gToto+=3;gExact+=2;gTotoCount++;gExactCount++;}
+            else if(totoOk){gToto+=3;gTotoCount++;}
           });
           const predAdv=calcDoorstootFromPredictions(pred);
           const r16teams=[...new Set(ctx.koMatches.filter(m=>m.round_id==="r16"&&m.home_team&&m.away_team).flatMap(m=>[m.home_team,m.away_team]))];
@@ -989,14 +1145,30 @@ function HomeView({setView,ctx}){
             if(!p||p.home===undefined||p.home===null) return;
             const exactOk=parseInt(p.home)===parseInt(match.home_goals)&&parseInt(p.away)===parseInt(match.away_goals);
             const totoOk=calcToto(p.home,p.away)===calcToto(match.home_goals,match.away_goals);
-            if(exactOk)koExact+=KO_EXACT_PTS;else if(totoOk)koToto+=KO_TOTO_PTS;
+            if(exactOk){koToto+=KO_TOTO_PTS;koExact+=(KO_EXACT_PTS-KO_TOTO_PTS);}
+            else if(totoOk){koToto+=KO_TOTO_PTS;}
           });
           Object.entries(ctx.bonusScores[uid]||{}).forEach(([qi,v])=>{
             if(v){const q=ctx.bonusQuestions.find(bq=>String(bq.idx)===String(qi));bonus+=(q?.points??20);}
           });
-          return gToto+gExact+gDoorstoot+koToto+koExact+bonus;
+          const total=gToto+gExact+gDoorstoot+koToto+koExact+bonus;
+          return{total,gTotoCount,gExactCount,bonus};
         }
-        const top5=ctx.participants.map(p=>({...p,total:calcScoreHome(p.id)})).sort((a,b)=>b.total-a.total).slice(0,5);
+        const allHome=ctx.participants.map(p=>({...p,...calcScoreHome(p.id)}));
+        allHome.sort((a,b)=>{
+          if(b.total!==a.total) return b.total-a.total;
+          if(b.gTotoCount!==a.gTotoCount) return b.gTotoCount-a.gTotoCount;
+          if(b.gExactCount!==a.gExactCount) return b.gExactCount-a.gExactCount;
+          if(b.bonus!==a.bonus) return b.bonus-a.bonus;
+          return 0;
+        });
+        const rankedHome=allHome.reduce((acc,p,i)=>{
+          const prev=acc[i-1];
+          const rang=i===0?1:(prev&&p.total===prev.total&&p.gTotoCount===prev.gTotoCount&&p.gExactCount===prev.gExactCount&&p.bonus===prev.bonus)?prev.rang:i+1;
+          acc.push({...p,rang});
+          return acc;
+        },[]);
+        const top5=rankedHome.filter(p=>p.rang<=5);
         const medals=["🥇","🥈","🥉"];
         return(
           <div style={S.card}>
@@ -1007,7 +1179,7 @@ function HomeView({setView,ctx}){
             {top5.length===0&&<p style={{fontSize:13,color:COLORS.gray}}>Nog geen deelnemers.</p>}
             {top5.map((p,i)=>(
               <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${COLORS.border}`}}>
-                <span style={{fontSize:16,width:24,textAlign:"center"}}>{medals[i]||i+1}</span>
+                <span style={{fontSize:16,width:24,textAlign:"center"}}>{medals[p.rang-1]||p.rang}</span>
                 <span style={{flex:1,fontWeight:600,fontSize:14}}>{p.first_name} {p.last_name}</span>
                 <span style={{...S.badge,fontSize:14,padding:"3px 10px"}}>{p.total} pt</span>
               </div>
@@ -1022,11 +1194,13 @@ function HomeView({setView,ctx}){
         if(ctx.rankingSnapshot.length===0) return null;
 
         // Get two most recent unique snapshots (by created_at batch)
-        const allDates=[...new Set(ctx.rankingSnapshot.map(r=>r.created_at))].sort().reverse();
-        if(allDates.length<2) return null;
-
-        const latestSnap=ctx.rankingSnapshot.filter(r=>r.created_at===allDates[0]);
-        const prevSnap=ctx.rankingSnapshot.filter(r=>r.created_at===allDates[1]);
+        const allTs2=[...new Set(ctx.rankingSnapshot.map(r=>r.created_at))].sort().reverse();
+        const batches2=[];let cb2=[allTs2[0]];
+        for(let i=1;i<allTs2.length;i++){const diff=(new Date(allTs2[i-1])-new Date(allTs2[i]))/60000;if(diff>2){batches2.push(cb2);cb2=[];}cb2.push(allTs2[i]);}
+        batches2.push(cb2);
+        if(batches2.length<2) return null;
+        const latestSnap=ctx.rankingSnapshot.filter(r=>new Set(batches2[0]).has(r.created_at));
+        const prevSnap=ctx.rankingSnapshot.filter(r=>new Set(batches2[1]).has(r.created_at));
 
         // Calculate rank changes
         const changes=latestSnap.map(cur=>{
@@ -1220,7 +1394,7 @@ function RegisterView({setView,ctx}){
   const [confirmNew,setConfirmNew]=useState(false);
   const [step,setStep]=useState("name"); // "name" | "pin" | "newpin"
 
-  if(deadlinePassed()) return <div style={S.card}><div style={S.alert("warn")}>De deadline is verstreken. Aanmelden niet meer mogelijk.</div></div>;
+  // Na deadline alleen bestaande deelnemers laten inloggen, geen nieuwe registraties
 
   async function handleName(){
     if(!firstName.trim()||!lastName.trim()){setErr("Vul je voor- en achternaam in.");return;}
@@ -1233,7 +1407,11 @@ function RegisterView({setView,ctx}){
       setStep("pin");
       setErr("");
     } else {
-      // Unknown - confirm new
+      // Unknown user - block after deadline
+      if(deadlinePassed()){
+        setErr("De deadline is verstreken. Nieuwe aanmeldingen zijn niet meer mogelijk.");
+        return;
+      }
       setConfirmNew(true);
     }
   }
@@ -1252,6 +1430,7 @@ function RegisterView({setView,ctx}){
   }
 
   async function confirmCreate(){
+    if(deadlinePassed()){setErr("De deadline is verstreken. Aanmelden is niet meer mogelijk.");return;}
     if(!newPin||newPin.length!==4||isNaN(newPin)){setErr("Kies een 4-cijferige pincode.");return;}
     if(newPin!==newPin2){setErr("Pincodes komen niet overeen.");return;}
     if(ctx.participants.length>=MAX_PARTICIPANTS){setErr("Maximum deelnemers bereikt.");setConfirmNew(false);return;}
@@ -1324,10 +1503,17 @@ function RegisterView({setView,ctx}){
   return(
     <div style={{...S.card,maxWidth:400,margin:"0 auto"}}>
       <h2 style={S.h2}>Aanmelden / Inloggen</h2>
-      <div style={{...S.alert(""),marginBottom:14,fontSize:13,lineHeight:1.6}}>
-        <strong>Eerste keer?</strong> Vul je naam in en kies een pincode.<br/>
-        <strong>Al eerder aangemeld?</strong> Vul je naam en pincode in.
-      </div>
+      {deadlinePassed()?(
+        <div style={{...S.alert("warn"),marginBottom:14,fontSize:13,lineHeight:1.6}}>
+          🔒 <strong>Nieuwe aanmeldingen zijn gesloten.</strong><br/>
+          Ben je al deelnemer? Log dan in met je naam en pincode.
+        </div>
+      ):(
+        <div style={{...S.alert(""),marginBottom:14,fontSize:13,lineHeight:1.6}}>
+          <strong>Eerste keer?</strong> Vul je naam in en kies een pincode.<br/>
+          <strong>Al eerder aangemeld?</strong> Vul je naam en pincode in.
+        </div>
+      )}
       {err&&<div style={{...S.alert("err"),marginBottom:10}}>{err}</div>}
       <div style={{marginBottom:10}}>
         <label style={S.label}>Voornaam</label>
@@ -1462,13 +1648,12 @@ function PredictView({ctx}){
     }));
   });
 
-  const tabs2=[{id:"group",label:"Groepsfase & Bonus",step:1,desc:`Deadline: ${fmtDeadline()}`},{id:"ko",label:"Knock-out",step:2,desc:"Tot 1 min voor aanvang"}];
+  const tabs2=[{id:"group",label:"Groepsfase & Bonus",step:1,desc:dp?"🔒 Deadline verstreken":`Deadline: ${fmtDeadline()}`},{id:"ko",label:"Knock-out",step:2,desc:"Tot 1 min voor aanvang"}];
   return(
     <div>
       <div style={{...S.row,marginBottom:14}}>
         <h2 style={{...S.h2,margin:0}}>Voorspellingen — {user.first_name} {user.last_name}</h2>
         <span style={S.tag("green")}>Groepsfase: {filled}/{total}</span>
-        {dp&&<span style={S.tag("")}>Deadline verstreken</span>}
       </div>
       <div style={{display:"flex",gap:0,marginBottom:20,borderRadius:10,overflow:"hidden",border:`1px solid ${COLORS.border}`}}>
         {tabs2.map((t,i)=>{
@@ -1580,9 +1765,15 @@ function PredictView({ctx}){
               return <span style={{fontSize:12,fontWeight:400,opacity:0.85}}>— {min===max?`${min} pt per vraag`:`${min}–${max} pt per vraag`}</span>;
             })()}</h3>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",marginBottom:4,fontSize:13,color:COLORS.green,fontWeight:600}}>
-            ✓ Antwoorden worden automatisch opgeslagen
-          </div>
+          {dp?(
+            <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",marginBottom:4,fontSize:13,color:COLORS.gray,fontWeight:600}}>
+              🔒 Deadline verstreken — antwoorden kunnen niet meer worden gewijzigd
+            </div>
+          ):(
+            <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",marginBottom:4,fontSize:13,color:COLORS.green,fontWeight:600}}>
+              ✓ Antwoorden worden automatisch opgeslagen
+            </div>
+          )}
           {ctx.bonusQuestions.map((q,i)=>(
             <div key={i} style={S.card}>
               <div style={{...S.h3,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
@@ -1655,7 +1846,12 @@ function PredictView({ctx}){
 // ─── STANDINGS ───────────────────────────────────────────────────────────────
 function StandingsView({ctx}){
   function calcScore(uid){
+    // gToto   = 3pts per wedstrijd met juiste toto (incl. exacte uitslagen)
+    // gExact  = 2pts extra per wedstrijd met exacte uitslag
+    // koToto  = KO_TOTO_PTS per KO-wedstrijd met juiste toto (incl. exact)
+    // koExact = (KO_EXACT_PTS - KO_TOTO_PTS) extra per exacte KO-uitslag
     let gToto=0,gExact=0,gDoorstoot=0,koToto=0,koExact=0,bonus=0;
+    let gTotoCount=0,gExactCount=0; // voor tiebreaker
     const pred=ctx.predictions[uid]||{};
     const koPred=ctx.koPredictions[uid]||{};
 
@@ -1665,7 +1861,8 @@ function StandingsView({ctx}){
       if(!p||p.home===undefined||p.away===undefined||p.home===""||p.away==="")return;
       const exactOk=parseInt(p.home)===parseInt(result.home)&&parseInt(p.away)===parseInt(result.away);
       const totoOk=calcToto(p.home,p.away)===calcToto(result.home,result.away);
-      if(exactOk)gExact+=5;else if(totoOk)gToto+=3;
+      if(exactOk){gToto+=3;gExact+=2;gTotoCount++;gExactCount++;}
+      else if(totoOk){gToto+=3;gTotoCount++;}
     });
 
     // Doorstoot punten (groepsfase -> r16)
@@ -1682,7 +1879,8 @@ function StandingsView({ctx}){
       if(!p||p.home===undefined||p.home===null) return;
       const exactOk=parseInt(p.home)===parseInt(match.home_goals)&&parseInt(p.away)===parseInt(match.away_goals);
       const totoOk=calcToto(p.home,p.away)===calcToto(match.home_goals,match.away_goals);
-      if(exactOk)koExact+=KO_EXACT_PTS;else if(totoOk)koToto+=KO_TOTO_PTS;
+      if(exactOk){koToto+=KO_TOTO_PTS;koExact+=(KO_EXACT_PTS-KO_TOTO_PTS);}
+      else if(totoOk){koToto+=KO_TOTO_PTS;}
     });
 
     Object.entries(ctx.bonusScores[uid]||{}).forEach(([qi,v])=>{
@@ -1691,33 +1889,93 @@ function StandingsView({ctx}){
         bonus+=(q?.points??20);
       }
     });
-    return{gToto,gExact,gDoorstoot,koToto,koExact,bonus,total:gToto+gExact+gDoorstoot+koToto+koExact+bonus};
+    const total=gToto+gExact+gDoorstoot+koToto+koExact+bonus;
+    return{gToto,gExact,gDoorstoot,koToto,koExact,bonus,total,gTotoCount,gExactCount};
   }
-  const rows=ctx.participants.map(p=>({...p,...calcScore(p.id)})).sort((a,b)=>b.total-a.total);
 
-  // Calculate trend from last two snapshots
-  const allDates=[...new Set(ctx.rankingSnapshot.map(r=>r.created_at))].sort().reverse();
+  // Sorteer: totaal desc → toto-count desc → exact-count desc
+  const rawRows=ctx.participants.map(p=>({...p,...calcScore(p.id)}));
+  rawRows.sort((a,b)=>{
+    if(b.total!==a.total) return b.total-a.total;
+    if(b.gTotoCount!==a.gTotoCount) return b.gTotoCount-a.gTotoCount;
+    if(b.gExactCount!==a.gExactCount) return b.gExactCount-a.gExactCount;
+    if(b.bonus!==a.bonus) return b.bonus-a.bonus;
+    return 0; // Volledig gelijk = gedeelde positie
+  });
+  // Ken rangnummers toe (gelijke stand = zelfde rang)
+  const rows=rawRows.reduce((acc,p,i)=>{
+    const prev=acc[i-1];
+    const rang=i===0?1:(prev&&p.total===prev.total&&p.gTotoCount===prev.gTotoCount&&p.gExactCount===prev.gExactCount&&p.bonus===prev.bonus)?prev.rang:i+1;
+    acc.push({...p,rang});
+    return acc;
+  },[]);
+
+  // Calculate trend: detecteer batches door snapshots te clusteren op tijdsverschil > 2 min
   const trendMap={};
-  if(allDates.length>=2){
-    const latest=ctx.rankingSnapshot.filter(r=>r.created_at===allDates[0]);
-    const prev=ctx.rankingSnapshot.filter(r=>r.created_at===allDates[1]);
-    latest.forEach(cur=>{
-      const p=prev.find(x=>x.participant_id===cur.participant_id);
-      if(p) trendMap[cur.participant_id]=p.rank-cur.rank; // positive = moved up
-    });
+  if(ctx.rankingSnapshot.length>0){
+    // Sorteer alle unieke timestamps
+    const allTs=[...new Set(ctx.rankingSnapshot.map(r=>r.created_at))].sort().reverse();
+    // Groepeer: nieuwe batch als tijdsverschil > 2 minuten
+    const batches=[];
+    let currentBatch=[allTs[0]];
+    for(let i=1;i<allTs.length;i++){
+      const diff=(new Date(allTs[i-1])-new Date(allTs[i]))/1000/60; // minuten
+      if(diff>2){batches.push(currentBatch);currentBatch=[];}
+      currentBatch.push(allTs[i]);
+    }
+    batches.push(currentBatch);
+    if(batches.length>=2){
+      const latestTs=new Set(batches[0]);
+      const prevTs=new Set(batches[1]);
+      const latest=ctx.rankingSnapshot.filter(r=>latestTs.has(r.created_at));
+      const prev=ctx.rankingSnapshot.filter(r=>prevTs.has(r.created_at));
+      latest.forEach(cur=>{
+        const p=prev.find(x=>x.participant_id===cur.participant_id);
+        if(p) trendMap[cur.participant_id]=p.rank-cur.rank;
+      });
+    }
   }
 
   function TrendBadge({uid}){
     const t=trendMap[uid];
-    if(t===undefined) return <span style={{color:COLORS.gray,fontSize:11}}>–</span>;
-    if(t===0) return <span style={{color:COLORS.gray,fontSize:13}}>→</span>;
+    if(!t) return <span style={{color:COLORS.gray,fontSize:11}}>–</span>;
     if(t>0) return <span style={{color:COLORS.green,fontWeight:700,fontSize:12}}>↑{t}</span>;
     return <span style={{color:"#c62828",fontWeight:700,fontSize:12}}>↓{Math.abs(t)}</span>;
   }
 
   return(
     <div style={S.card}>
-      <h2 style={S.h2}>Klassement</h2>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:16}}>
+        <h2 style={{...S.h2,margin:0}}>Klassement</h2>
+        {(()=>{
+          // Laatste snapshot datum
+          // Laatste verwerkte wedstrijd op basis van volgorde in MATCH_SCHEDULE
+          const scheduleKeys=Object.keys(MATCH_SCHEDULE);
+          const playedKeys=Object.keys(ctx.matchResults).filter(mid=>ctx.matchResults[mid]&&ctx.matchResults[mid].home!==null);
+          playedKeys.sort((a,b)=>scheduleKeys.indexOf(a)-scheduleKeys.indexOf(b));
+          const lastMid=playedKeys[playedKeys.length-1];
+          const lastResult=lastMid?ctx.matchResults[lastMid]:null;
+          const lastLabel=lastMid?lastMid.replace(/^[A-Z]-/,"").replace(/-/g," – "):null;
+          const lastScore=lastResult?lastResult.home+"–"+lastResult.away:null;
+          const lastDate=lastMid&&MATCH_SCHEDULE[lastMid]?MATCH_SCHEDULE[lastMid].date:null;
+          const totalPlayed=playedKeys.length;
+          if(!lastMid) return null;
+          return(
+            <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,background:"#f4f9f6",border:`1px solid ${COLORS.green}22`,borderRadius:8,padding:"6px 14px"}}>
+                <span style={{fontSize:16}}>⚽</span>
+                <div>
+                  <div style={{fontSize:10,color:COLORS.gray,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4}}>Stand t/m ({totalPlayed} wedstrijden)</div>
+                  <div style={{fontSize:13,fontWeight:700,color:COLORS.dark}}>
+                    {lastLabel} <span style={{color:COLORS.green}}>{lastScore}</span>
+                    {lastDate&&<span style={{color:COLORS.gray,fontWeight:400,marginLeft:6,fontSize:12}}>{lastDate}</span>}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
       {rows.length===0&&<p style={{color:COLORS.gray,fontSize:13}}>Nog geen deelnemers.</p>}
       {rows.length>0&&(
         <div style={{overflowX:"auto"}}>
@@ -1736,8 +1994,8 @@ function StandingsView({ctx}){
             </tr></thead>
             <tbody>
               {rows.map((p,i)=>(
-                <tr key={p.id} style={{background:i===0?"#fffde7":i%2===0?"#f9fffe":"#fff"}}>
-                  <td style={S.td}>{i===0?"🥇":i===1?"🥈":i===2?"🥉":i+1}</td>
+                <tr key={p.id} style={{background:p.rang===1?"#fffde7":i%2===0?"#f9fffe":"#fff"}}>
+                  <td style={S.td}>{p.rang===1?"🥇":p.rang===2?"🥈":p.rang===3?"🥉":p.rang}</td>
                   <td style={S.tdc}><TrendBadge uid={p.id}/></td>
                   <td style={{...S.td,fontWeight:600}}>{p.first_name} {p.last_name}</td>
                   <td style={S.tdc}>{p.gToto}</td><td style={S.tdc}>{p.gExact}</td><td style={S.tdc}>{p.gDoorstoot}</td>
@@ -1992,6 +2250,128 @@ const WK_DATES=(()=>{
 function parseWKDate(s){const months={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};const[d,mo]=s.split(" ");return new Date(2026,months[mo],parseInt(d));}
 function weekdayNL(d){return["zondag","maandag","dinsdag","woensdag","donderdag","vrijdag","zaterdag"][d.getDay()];}
 
+
+// ─── PREDICTIE UITKLAP (deelnemerslijst + staafdiagram per wedstrijd) ──────────
+function PredictieUitklap({predRows,t1,t2,hasResult,mid,isKO=false,KO_EXACT_PTS=10,KO_TOTO_PTS=5}){
+  const [open,setOpen]=React.useState(false);
+  const chartId=`chart_${mid.replace(/[^a-zA-Z0-9]/g,"_")}`;
+
+  // Bouw frequentietabel van uitslag-combinaties
+  const freqMap={};
+  predRows.forEach(p=>{
+    if(!p.hasPred) return;
+    const key=`${p.pred.home}-${p.pred.away}`;
+    freqMap[key]=(freqMap[key]||0)+1;
+  });
+  const freqData=Object.entries(freqMap).sort((a,b)=>b[1]-a[1]);
+  const chartLabels=freqData.map(([k])=>k);
+  const chartValues=freqData.map(([,v])=>v);
+  const totalPred=predRows.filter(p=>p.hasPred).length;
+
+  React.useEffect(()=>{
+    if(!window.Chart){
+      const s=document.createElement("script");
+      s.src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js";
+      s.onload=()=>setOpen(o=>o); // herrender na laden
+      document.head.appendChild(s);
+    }
+  },[]);
+
+  React.useEffect(()=>{
+    if(!open||freqData.length===0) return;
+    if(!window.Chart) return;
+    const existing=window._wkCharts&&window._wkCharts[chartId];
+    if(existing){existing.destroy();}
+    const canvas=document.getElementById(chartId);
+    if(!canvas) return;
+    const isDark=matchMedia("(prefers-color-scheme: dark)").matches;
+    const barColor=isDark?"#97C459":"#639922";
+    const barFade=isDark?"rgba(150,196,89,0.3)":"rgba(99,153,34,0.25)";
+    const gridColor=isDark?"rgba(255,255,255,0.08)":"rgba(0,0,0,0.07)";
+    const textColor=isDark?"#D3D1C7":"#5F5E5A";
+    const chart=new window.Chart(canvas,{
+      type:"bar",
+      data:{
+        labels:chartLabels,
+        datasets:[{
+          label:"Voorspellingen",
+          data:chartValues,
+          backgroundColor:chartValues.map((_,i)=>i===0?barColor:barFade),
+          borderColor:isDark?"#97C459":"#639922",
+          borderWidth:1.5,
+          borderRadius:4,
+        }]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{
+          legend:{display:false},
+          tooltip:{callbacks:{label:ctx=>" "+ctx.raw+"× ("+Math.round(ctx.raw/totalPred*100)+"%)"}}
+        },
+        scales:{
+          x:{ticks:{color:textColor,font:{size:12},autoSkip:false},grid:{display:false},border:{display:false}},
+          y:{beginAtZero:true,ticks:{color:textColor,font:{size:11},stepSize:1,callback:v=>v===0?"":v+"×"},grid:{color:gridColor},border:{display:false}}
+        }
+      }
+    });
+    if(!window._wkCharts) window._wkCharts={};
+    window._wkCharts[chartId]=chart;
+    return()=>{chart.destroy();if(window._wkCharts) delete window._wkCharts[chartId];};
+  },[open,chartId]);
+
+  return(
+    <div>
+      <button
+        onClick={()=>setOpen(o=>!o)}
+        style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:COLORS.light,border:`1px solid ${COLORS.border}`,borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700,color:COLORS.dark}}
+      >
+        <span>⚽ Wat voorspelt Leeuwerik? ({totalPred} voorspellingen)</span>
+        <span style={{transition:"transform 0.2s",display:"inline-block",transform:open?"rotate(180deg)":"rotate(0deg)"}}>▾</span>
+      </button>
+      {open&&(
+        <div style={{marginTop:8}}>
+          <div style={{overflowX:"auto",marginBottom:16}}>
+            <table style={S.table}>
+              <thead><tr>
+                <th style={S.th}>Deelnemer</th>
+                <th style={{...S.th,textAlign:"center"}}><FlagImg name={t1.name} size={14}/> {t1.name}</th>
+                <th style={{...S.th,textAlign:"center"}}><FlagImg name={t2.name} size={14}/> {t2.name}</th>
+                {!isKO&&<th style={{...S.th,textAlign:"center"}}>Toto</th>}
+                {hasResult&&<th style={{...S.th,textAlign:"center",background:COLORS.dark}}>Punten</th>}
+              </tr></thead>
+              <tbody>
+                {predRows.map((p,i)=>{
+                  const toto=(!isKO&&p.hasPred)?calcToto(p.pred.home,p.pred.away):null;
+                  const totoLabel=toto==="W"?t1.name:toto==="L"?t2.name:toto==="D"?"Gelijk":"—";
+                  const ptsBg=isKO?(p.pts===KO_EXACT_PTS?COLORS.green:p.pts===KO_TOTO_PTS?COLORS.yellow:p.pts===0?"#eee":COLORS.gray):(p.pts===5?COLORS.green:p.pts===3?COLORS.yellow:p.pts===0?"#eee":COLORS.gray);
+                  const ptsColor=isKO?(p.pts===KO_EXACT_PTS?"#fff":p.pts===KO_TOTO_PTS?COLORS.dark:"#999"):(p.pts===5?"#fff":p.pts===3?COLORS.dark:"#999");
+                  return(
+                    <tr key={p.id} style={{background:i%2===0?"#f9fffe":"#fff"}}>
+                      <td style={{...S.td,fontWeight:600}}>{p.first_name} {p.last_name}</td>
+                      <td style={S.tdc}>{p.hasPred?p.pred.home:<span style={{color:COLORS.gray}}>—</span>}</td>
+                      <td style={S.tdc}>{p.hasPred?p.pred.away:<span style={{color:COLORS.gray}}>—</span>}</td>
+                      {!isKO&&<td style={S.tdc}>{p.hasPred?<span style={S.tag("green")}>{totoLabel}</span>:<span style={{color:COLORS.gray}}>—</span>}</td>}
+                      {hasResult&&<td style={S.tdc}><span style={{...S.badge,background:ptsBg,color:ptsColor}}>{p.pts!==null?p.pts+"pt":"—"}</span></td>}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {freqData.length>0&&(
+            <div style={{marginTop:4}}>
+              <div style={{fontSize:11,fontWeight:700,color:COLORS.gray,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>Verdeling voorspellingen</div>
+              <div style={{position:"relative",width:"100%",height:`${Math.max(180, freqData.length*36+60)}px`}}>
+                <canvas id={chartId} role="img" aria-label={`Staafdiagram verdeling voorspellingen ${t1.name} - ${t2.name}`}/>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DagProgrammaView({ctx}){
   const dp=deadlinePassed();
 
@@ -2014,7 +2394,12 @@ function DagProgrammaView({ctx}){
   },[ctx.koMatches]);
 
   const allDates=Object.keys(allDatesMap).sort((a,b)=>parseWKDate(a)-parseWKDate(b));
-  const [selectedDate,setSelectedDate]=useState(allDates[0]||"");
+  const [selectedDate,setSelectedDate]=useState(()=>{
+    const now=new Date();
+    const months=["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"];
+    const todayKey=`${now.getDate()} ${months[now.getMonth()]}`;
+    return allDates.includes(todayKey)?todayKey:(allDates[0]||"");
+  });
   const dayMatches=(allDatesMap[selectedDate]||[]).slice().sort((a,b)=>{
     const[ah,am]=a.time.split(":").map(Number);const[bh,bm]=b.time.split(":").map(Number);return(ah*60+am)-(bh*60+bm);
   });
@@ -2061,7 +2446,7 @@ function DagProgrammaView({ctx}){
                   pts=exactOk?KO_EXACT_PTS:totoOk?KO_TOTO_PTS:0;
                 }
                 return{...p,pred,hasPred,pts};
-              });
+              }).sort((a,b)=>(`${a.first_name} ${a.last_name}`).localeCompare(`${b.first_name} ${b.last_name}`,"nl"));
               return(
                 <div key={mid} style={{...S.card,marginBottom:16}}>
                   <div style={{borderBottom:`1px solid ${COLORS.border}`,paddingBottom:12,marginBottom:12}}>
@@ -2093,31 +2478,7 @@ function DagProgrammaView({ctx}){
                     if(!closed) return(
                       <div style={{...S.alert("warn"),fontSize:12}}>🔒 Voorspellingen zichtbaar na aanvang van de wedstrijd.</div>
                     );
-                    return(
-                    <div>
-                      <div style={{fontSize:12,fontWeight:700,color:COLORS.gray,marginBottom:8,textTransform:"uppercase"}}>Voorspellingen</div>
-                      <div style={{overflowX:"auto"}}>
-                        <table style={S.table}>
-                          <thead><tr>
-                            <th style={S.th}>Deelnemer</th>
-                            <th style={{...S.th,textAlign:"center"}}>{t1?t1.name:"Thuis"}</th>
-                            <th style={{...S.th,textAlign:"center"}}>{t2?t2.name:"Uit"}</th>
-                            {hasResult&&<th style={{...S.th,textAlign:"center",background:COLORS.dark}}>Punten</th>}
-                          </tr></thead>
-                          <tbody>
-                            {predRows.map((p,i)=>(
-                              <tr key={p.id} style={{background:i%2===0?"#f9fffe":"#fff"}}>
-                                <td style={{...S.td,fontWeight:600}}>{p.first_name} {p.last_name}</td>
-                                <td style={S.tdc}>{p.hasPred?p.pred.home:<span style={{color:COLORS.gray}}>—</span>}</td>
-                                <td style={S.tdc}>{p.hasPred?p.pred.away:<span style={{color:COLORS.gray}}>—</span>}</td>
-                                {hasResult&&<td style={S.tdc}><span style={{...S.badge,background:p.pts===KO_EXACT_PTS?COLORS.green:p.pts===KO_TOTO_PTS?COLORS.yellow:"#eee",color:p.pts===KO_EXACT_PTS?"#fff":p.pts===KO_TOTO_PTS?COLORS.dark:"#999"}}>{p.pts!==null?`${p.pts}pt`:"—"}</span></td>}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                    );
+                    return <PredictieUitklap predRows={predRows} t1={t1||{name:"Thuis"}} t2={t2||{name:"Uit"}} hasResult={hasResult} mid={mid} isKO={true} KO_EXACT_PTS={KO_EXACT_PTS} KO_TOTO_PTS={KO_TOTO_PTS}/>;
                   })()}
                 </div>
               );
@@ -2136,7 +2497,7 @@ function DagProgrammaView({ctx}){
                 pts=exactOk?5:totoOk?3:0;
               }
               return{...p,pred,hasPred,pts};
-            });
+            }).sort((a,b)=>(`${a.first_name} ${a.last_name}`).localeCompare(`${b.first_name} ${b.last_name}`,"nl"));
             return(
               <div key={mid} style={{...S.card,marginBottom:16}}>
                 <div style={{borderBottom:`1px solid ${COLORS.border}`,paddingBottom:12,marginBottom:12}}>
@@ -2165,35 +2526,7 @@ function DagProgrammaView({ctx}){
                 {!dp?(
                   <div style={{...S.alert("warn"),fontSize:12}}>🔒 Voorspellingen zichtbaar na de deadline ({fmtDeadline()}).</div>
                 ):(
-                  <div>
-                    <div style={{fontSize:12,fontWeight:700,color:COLORS.gray,marginBottom:8,textTransform:"uppercase"}}>Voorspellingen</div>
-                    <div style={{overflowX:"auto"}}>
-                      <table style={S.table}>
-                        <thead><tr>
-                          <th style={S.th}>Deelnemer</th>
-                          <th style={{...S.th,textAlign:"center"}}><FlagImg name={t1.name} size={14}/> {t1.name}</th>
-                          <th style={{...S.th,textAlign:"center"}}><FlagImg name={t2.name} size={14}/> {t2.name}</th>
-                          <th style={{...S.th,textAlign:"center"}}>Toto</th>
-                          {hasResult&&<th style={{...S.th,textAlign:"center",background:COLORS.dark}}>Punten</th>}
-                        </tr></thead>
-                        <tbody>
-                          {predRows.map((p,i)=>{
-                            const toto=p.hasPred?calcToto(p.pred.home,p.pred.away):null;
-                            const totoLabel=toto==="W"?t1.name:toto==="L"?t2.name:toto==="D"?"Gelijk":"—";
-                            return(
-                              <tr key={p.id} style={{background:i%2===0?"#f9fffe":"#fff"}}>
-                                <td style={{...S.td,fontWeight:600}}>{p.first_name} {p.last_name}</td>
-                                <td style={S.tdc}>{p.hasPred?p.pred.home:<span style={{color:COLORS.gray}}>—</span>}</td>
-                                <td style={S.tdc}>{p.hasPred?p.pred.away:<span style={{color:COLORS.gray}}>—</span>}</td>
-                                <td style={S.tdc}>{p.hasPred?<span style={S.tag("green")}>{totoLabel}</span>:<span style={{color:COLORS.gray}}>—</span>}</td>
-                                {hasResult&&<td style={S.tdc}><span style={{...S.badge,background:p.pts===5?COLORS.green:p.pts===3?COLORS.yellow:p.pts===0?"#eee":COLORS.gray,color:p.pts===5?"#fff":p.pts===3?COLORS.dark:"#999"}}>{p.pts!==null?`${p.pts}pt`:"—"}</span></td>}
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                  <PredictieUitklap predRows={predRows} t1={t1} t2={t2} hasResult={hasResult} mid={mid}/>
                 )}
               </div>
             );
@@ -2221,9 +2554,48 @@ function DagProgrammaView({ctx}){
   );
 }
 
+
+// ─── ADMIN INSTELLINGEN ───────────────────────────────────────────────────────
+function AdminInstellingen(){
+  const [override,setOverride]=React.useState(()=>localStorage.getItem("deadlineOverride")==="true");
+
+  function toggle(){
+    const next=!override;
+    if(next) localStorage.setItem("deadlineOverride","true");
+    else localStorage.removeItem("deadlineOverride");
+    setOverride(next);
+  }
+
+  return(
+    <div style={{...S.card,maxWidth:480}}>
+      <h3 style={{...S.h3,marginBottom:4}}>🛠️ Testinstellingen</h3>
+      <p style={{fontSize:13,color:COLORS.gray,marginBottom:20}}>Alleen zichtbaar voor jou (opgeslagen in browser). Andere deelnemers worden niet beïnvloed.</p>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",background:override?"#fff8e1":"#f9f9f9",border:`1px solid ${override?COLORS.yellow:COLORS.border}`,borderRadius:8}}>
+        <div>
+          <div style={{fontWeight:700,fontSize:14,color:COLORS.dark}}>Deadline gesimuleerd als verstreken</div>
+          <div style={{fontSize:12,color:COLORS.gray,marginTop:2}}>Voorspellingen worden zichtbaar in Programma</div>
+        </div>
+        <button
+          onClick={toggle}
+          style={{...S.btn(override?"yellow":"green"),minWidth:80}}
+        >
+          {override?"Uitzetten":"Aanzetten"}
+        </button>
+      </div>
+      {override&&(
+        <div style={{...S.alert("warn"),marginTop:12,fontSize:12}}>
+          ⚠️ Override actief — zet uit na het testen!
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── ADMIN ───────────────────────────────────────────────────────────────────
 function AdminView({ctx}){
-  const [pw,setPw]=useState("");const [pwErr,setPwErr]=useState("");const [tab,setTab]=useState("results");
+  const [pw,setPw]=useState("");const [pwErr,setPwErr]=useState("");
+  const [tab,setTab]=useState(()=>localStorage.getItem("adminTab")||"results");
+  const setAdminTab=(t)=>{localStorage.setItem("adminTab",t);setTab(t);};
   if(!ctx.isAdmin) return(
     <div style={{...S.card,maxWidth:360,margin:"0 auto"}}>
       <h2 style={S.h2}>🔒 Beheerderspaneel</h2>
@@ -2234,17 +2606,18 @@ function AdminView({ctx}){
       <button style={S.btn("green")} onClick={()=>pw===ADMIN_PASSWORD?ctx.setIsAdmin(true):setPwErr("Onjuist wachtwoord")}>Inloggen</button>
     </div>
   );
-  const tabs=[{id:"results",label:"📊 Uitslagen"},{id:"ko",label:"⚡ Knock-out"},{id:"bonus",label:"🎁 Bonusvragen"},{id:"beoordeel",label:"✅ Beoordelen"},{id:"users",label:"Deelnemers"},{id:"news",label:"📢 Nieuws"}];
+  const tabs=[{id:"results",label:"📊 Uitslagen"},{id:"ko",label:"⚡ Knock-out"},{id:"bonus",label:"🎁 Bonusvragen"},{id:"beoordeel",label:"✅ Beoordelen"},{id:"users",label:"Deelnemers"},{id:"news",label:"📢 Nieuws"},{id:"instellingen",label:"🛠️ Instellingen"}];
   return(
     <div>
       <div style={{...S.row,marginBottom:14}}><h2 style={{...S.h2,margin:0}}>⚙️ Beheerderspaneel</h2><span style={S.tag("green")}>Admin ingelogd</span></div>
-      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>{tabs.map(t=><button key={t.id} style={S.navBtn(tab===t.id)} onClick={()=>setTab(t.id)}>{t.label}</button>)}</div>
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>{tabs.map(t=><button key={t.id} style={S.navBtn(tab===t.id)} onClick={()=>setAdminTab(t.id)}>{t.label}</button>)}</div>
       {tab==="results"&&<AdminResults ctx={ctx}/>}
       {tab==="ko"&&<AdminKO ctx={ctx}/>}
       {tab==="bonus"&&<AdminBonus ctx={ctx}/>}
       {tab==="beoordeel"&&<AdminBeoordeel ctx={ctx}/>}
       {tab==="users"&&<AdminUsers ctx={ctx}/>}
       {tab==="news"&&<AdminNews ctx={ctx}/>}
+      {tab==="instellingen"&&<AdminInstellingen/>}
     </div>
   );
 }

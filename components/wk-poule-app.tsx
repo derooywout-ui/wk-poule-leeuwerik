@@ -327,7 +327,6 @@ function MatchCard({grp,t1,t2,homeVal,awayVal,onHomeChange,onAwayChange,disabled
 }
 
 // ─── MAIN APP ────────────────────────────────────────────────────────────────
-export default 
 // ─── LOUIS CHATBOT ────────────────────────────────────────────────────────────
 function LouisChatbot(){
   const [open,setOpen]=React.useState(false);
@@ -458,7 +457,7 @@ function LouisChatbot(){
   );
 }
 
-function App(){
+export default function App(){
   const [view,setView]=useState("home");
   const [currentUser,setCurrentUser]=useState(null);
   const [isAdmin,setIsAdmin]=useState(false);

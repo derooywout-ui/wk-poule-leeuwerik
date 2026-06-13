@@ -1197,9 +1197,14 @@ function HomeView({setView,ctx}){
         const batches2=[];let cb2=[allTs2[0]];
         for(let i=1;i<allTs2.length;i++){const diff=(new Date(allTs2[i-1])-new Date(allTs2[i]))/60000;if(diff>2){batches2.push(cb2);cb2=[];}cb2.push(allTs2[i]);}
         batches2.push(cb2);
-        if(batches2.length<2) return null;
-        const latestSnap=ctx.rankingSnapshot.filter(r=>new Set(batches2[0]).has(r.created_at));
-        const prevSnap=ctx.rankingSnapshot.filter(r=>new Set(batches2[1]).has(r.created_at));
+        // Sla batches over waarbij iedereen rank 1 heeft (nul-stand vóór eerste wedstrijd)
+        const meaningful2=batches2.filter(batch=>{
+          const rows=ctx.rankingSnapshot.filter(r=>new Set(batch).has(r.created_at));
+          return rows.some(r=>r.rank>1||r.total>0);
+        });
+        if(meaningful2.length<2) return null;
+        const latestSnap=ctx.rankingSnapshot.filter(r=>new Set(meaningful2[0]).has(r.created_at));
+        const prevSnap=ctx.rankingSnapshot.filter(r=>new Set(meaningful2[1]).has(r.created_at));
 
         // Calculate rank changes
         const changes=latestSnap.map(cur=>{
@@ -1912,20 +1917,24 @@ function StandingsView({ctx}){
   // Calculate trend: detecteer batches door snapshots te clusteren op tijdsverschil > 2 min
   const trendMap={};
   if(ctx.rankingSnapshot.length>0){
-    // Sorteer alle unieke timestamps
     const allTs=[...new Set(ctx.rankingSnapshot.map(r=>r.created_at))].sort().reverse();
     // Groepeer: nieuwe batch als tijdsverschil > 2 minuten
     const batches=[];
     let currentBatch=[allTs[0]];
     for(let i=1;i<allTs.length;i++){
-      const diff=(new Date(allTs[i-1])-new Date(allTs[i]))/1000/60; // minuten
+      const diff=(new Date(allTs[i-1])-new Date(allTs[i]))/1000/60;
       if(diff>2){batches.push(currentBatch);currentBatch=[];}
       currentBatch.push(allTs[i]);
     }
     batches.push(currentBatch);
-    if(batches.length>=2){
-      const latestTs=new Set(batches[0]);
-      const prevTs=new Set(batches[1]);
+    // Sla batches over waarbij iedereen rank 1 heeft (nul-stand vóór eerste wedstrijd)
+    const meaningfulBatches=batches.filter(batch=>{
+      const rows=ctx.rankingSnapshot.filter(r=>new Set(batch).has(r.created_at));
+      return rows.some(r=>r.rank>1||r.total>0);
+    });
+    if(meaningfulBatches.length>=2){
+      const latestTs=new Set(meaningfulBatches[0]);
+      const prevTs=new Set(meaningfulBatches[1]);
       const latest=ctx.rankingSnapshot.filter(r=>latestTs.has(r.created_at));
       const prev=ctx.rankingSnapshot.filter(r=>prevTs.has(r.created_at));
       latest.forEach(cur=>{

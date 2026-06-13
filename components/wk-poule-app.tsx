@@ -1,4 +1,3 @@
-"use client";
 // NOTE: Run in Supabase SQL Editor:
 // ALTER TABLE bonus_questions ADD COLUMN IF NOT EXISTS points integer DEFAULT 20;
 // ALTER TABLE bonus_questions ADD COLUMN IF NOT EXISTS tooltip text;

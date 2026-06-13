@@ -1958,9 +1958,15 @@ function StandingsView({ctx}){
         {(()=>{
           // Laatste snapshot datum
           // Laatste verwerkte wedstrijd op basis van volgorde in MATCH_SCHEDULE
-          const scheduleKeys=Object.keys(MATCH_SCHEDULE);
+          // Sorteer gespeelde wedstrijden op datum+tijd (niet op schema-positie)
+          const months2={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
+          function matchDateTime(mid){
+            const s=MATCH_SCHEDULE[mid];if(!s)return new Date(0);
+            const[day,mon]=s.date.split(" ");const[h,m]=s.time.split(":");
+            return new Date(2026,months2[mon],parseInt(day),parseInt(h),parseInt(m));
+          }
           const playedKeys=Object.keys(ctx.matchResults).filter(mid=>ctx.matchResults[mid]&&ctx.matchResults[mid].home!==null);
-          playedKeys.sort((a,b)=>scheduleKeys.indexOf(a)-scheduleKeys.indexOf(b));
+          playedKeys.sort((a,b)=>matchDateTime(a)-matchDateTime(b));
           const lastMid=playedKeys[playedKeys.length-1];
           const lastResult=lastMid?ctx.matchResults[lastMid]:null;
           const lastLabel=lastMid?lastMid.replace(/^[A-Z]-/,"").replace(/-/g," – "):null;

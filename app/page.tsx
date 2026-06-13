@@ -1,6 +1,10 @@
 "use client"
-import dynamic from "next/dynamic"
-const App = dynamic(() => import("@/components/wk-poule-app"), { ssr: false })
+import { useEffect, useState } from "react"
+import App from "@/components/wk-poule-app"
+
 export default function Page() {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+  if (!mounted) return null
   return <App />
 }

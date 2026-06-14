@@ -1890,6 +1890,35 @@ function DeelnemerOverlay({p, ctx, onClose}){
   const notPlayed=allGroupMatches.filter(m=>!m.hasResult&&m.hasPred);
   const totalPts=played.reduce((s,m)=>s+(m.pts||0),0);
 
+  // Bereken counts voor ratio's
+  let gTotoCount=0,gExactCount=0;
+  played.forEach(m=>{
+    if(!m.hasPred) return;
+    const exact=parseInt(m.pp.home)===parseInt(m.result.home)&&parseInt(m.pp.away)===parseInt(m.result.away);
+    const toto=calcToto(m.pp.home,m.pp.away)===calcToto(m.result.home,m.result.away);
+    if(exact){gTotoCount++;gExactCount++;}
+    else if(toto){gTotoCount++;}
+  });
+
+  // KO counts
+  let koTotoCount=0,koExactCount=0,koPlayed=0;
+  ctx.koMatches.forEach(match=>{
+    if(!match.home_team||!match.away_team) return;
+    if(match.home_goals===null||match.home_goals===undefined) return;
+    koPlayed++;
+    const kp=koPred[match.id];
+    if(!kp||kp.home===undefined||kp.home===null) return;
+    const exact=parseInt(kp.home)===parseInt(match.home_goals)&&parseInt(kp.away)===parseInt(match.away_goals);
+    const toto=calcToto(kp.home,kp.away)===calcToto(match.home_goals,match.away_goals);
+    if(exact){koTotoCount++;koExactCount++;}
+    else if(toto){koTotoCount++;}
+  });
+
+  // Bonus counts
+  const bonusTotal=ctx.bonusQuestions.length;
+  const bonusCorrect=Object.entries(bonusS).filter(([,v])=>v===true).length;
+  const bonusAnswered=ctx.bonusQuestions.filter(q=>bonusA[q.idx]!==undefined&&bonusA[q.idx]!=="").length;
+
   // Sluit bij klik buiten overlay
   function handleBackdrop(e){if(e.target===e.currentTarget)onClose();}
 
@@ -1930,6 +1959,43 @@ function DeelnemerOverlay({p, ctx, onClose}){
               </div>
             ))}
           </div>
+
+          {/* Ratio voortgangsbalken */}
+          {played.length>0&&(
+            <div style={{marginBottom:20}}>
+              <div style={{fontWeight:700,fontSize:13,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Nauwkeurigheid</div>
+              {[
+                {label:"Groep toto",count:gTotoCount,total:played.length,color:C.green},
+                {label:"Groep exact",count:gExactCount,total:played.length,color:"#1565c0"},
+                ...(koPlayed>0?[
+                  {label:"KO toto",count:koTotoCount,total:koPlayed,color:C.green},
+                  {label:"KO exact",count:koExactCount,total:koPlayed,color:"#1565c0"},
+                ]:[]),
+                ...(bonusTotal>0?[
+                  {label:`Bonus (${bonusAnswered}/${bonusTotal} ingevuld)`,count:bonusCorrect,total:bonusTotal,color:"#e65100"},
+                ]:[]),
+              ].map((r,i)=>{
+                const pct=r.total>0?Math.round(r.count/r.total*100):0;
+                return(
+                  <div key={i} style={{marginBottom:10}}>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4}}>
+                      <span style={{fontWeight:600,color:C.dark}}>{r.label}</span>
+                      <span style={{color:C.gray}}>{r.count}/{r.total} · <strong style={{color:r.color}}>{pct}%</strong></span>
+                    </div>
+                    <div style={{height:10,background:"#e8e8e8",borderRadius:6,overflow:"hidden"}}>
+                      <div style={{
+                        height:"100%",borderRadius:6,
+                        background:r.color,
+                        width:`${pct}%`,
+                        transition:"width 0.6s ease",
+                        minWidth:pct>0?"6px":"0",
+                      }}/>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Gespeelde wedstrijden */}
           <div style={{fontWeight:700,fontSize:13,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Gespeelde wedstrijden</div>

@@ -1169,17 +1169,19 @@ function HomeView({setView,ctx}){
         },[]);
         const top5=rankedHome.filter(p=>p.rang<=5);
         const medals=["🥇","🥈","🥉"];
+        const [selectedHome,setSelectedHome]=React.useState(null);
         return(
           <div style={S.card}>
+            {selectedHome&&<DeelnemerOverlay p={selectedHome} ctx={ctx} onClose={()=>setSelectedHome(null)}/>}
             <div style={{...S.row,marginBottom:12,justifyContent:"space-between"}}>
               <h2 style={{...S.h2,margin:0}}>Top 5 klassement</h2>
               <button style={{...S.btn("green"),fontSize:12,padding:"6px 12px"}} onClick={()=>setView("standings")}>Volledig klassement →</button>
             </div>
             {top5.length===0&&<p style={{fontSize:13,color:COLORS.gray}}>Nog geen deelnemers.</p>}
             {top5.map((p,i)=>(
-              <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${COLORS.border}`}}>
+              <div key={p.id} onClick={()=>setSelectedHome(p)} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${COLORS.border}`,cursor:"pointer"}}>
                 <span style={{fontSize:16,width:24,textAlign:"center"}}>{medals[p.rang-1]||p.rang}</span>
-                <span style={{flex:1,fontWeight:600,fontSize:14}}>{p.first_name} {p.last_name}</span>
+                <span style={{flex:1,fontWeight:600,fontSize:14,color:COLORS.green}}>{p.first_name} {p.last_name} <span style={{fontSize:12,opacity:0.6}}>›</span></span>
                 <span style={{...S.badge,fontSize:14,padding:"3px 10px"}}>{p.total} pt</span>
               </div>
             ))}

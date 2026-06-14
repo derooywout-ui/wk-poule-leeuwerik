@@ -1848,7 +1848,177 @@ function PredictView({ctx}){
 }
 
 // ─── STANDINGS ───────────────────────────────────────────────────────────────
+
+// ─── DEELNEMER DETAIL OVERLAY ─────────────────────────────────────────────────
+function DeelnemerOverlay({p, ctx, onClose}){
+  const C = COLORS;
+  const pred = ctx.predictions[p.id]||{};
+  const koPred = ctx.koPredictions[p.id]||{};
+  const bonusA = ctx.bonusAnswers[p.id]||{};
+  const bonusS = ctx.bonusScores[p.id]||{};
+
+  // Groepsfase: alle wedstrijden gesorteerd op datum+tijd
+  const months={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
+  function matchDt(mid){
+    const s=MATCH_SCHEDULE[mid];if(!s)return new Date(2099,0,1);
+    const[day,mon]=s.date.split(" ");const[h,m]=s.time.split(":");
+    return new Date(2026,months[mon],parseInt(day),parseInt(h),parseInt(m));
+  }
+
+  const allGroupMatches=[];
+  Object.entries(WK_GROUPS).forEach(([grp,teams])=>{
+    teams.forEach((t1,i)=>teams.slice(i+1).forEach((t2)=>{
+      const mid=getMatchId(grp,t1.name,t2.name);
+      const result=ctx.matchResults[mid];
+      const hasResult=result&&result.home!==null&&result.home!==undefined;
+      const pp=pred[mid];
+      const hasPred=pp&&pp.home!==undefined&&pp.home!==null&&pp.away!==undefined&&pp.away!==null;
+      let pts=null;
+      if(hasPred&&hasResult){
+        const exact=parseInt(pp.home)===parseInt(result.home)&&parseInt(pp.away)===parseInt(result.away);
+        const toto=calcToto(pp.home,pp.away)===calcToto(result.home,result.away);
+        pts=exact?5:toto?3:0;
+      }
+      allGroupMatches.push({mid,grp,t1,t2,result,hasResult,pp,hasPred,pts,dt:matchDt(mid)});
+    }));
+  });
+  allGroupMatches.sort((a,b)=>a.dt-b.dt);
+
+  const played=allGroupMatches.filter(m=>m.hasResult);
+  const notPlayed=allGroupMatches.filter(m=>!m.hasResult&&m.hasPred);
+  const totalPts=played.reduce((s,m)=>s+(m.pts||0),0);
+
+  // Sluit bij klik buiten overlay
+  function handleBackdrop(e){if(e.target===e.currentTarget)onClose();}
+
+  return(
+    <div onClick={handleBackdrop} style={{
+      position:"fixed",top:0,left:0,right:0,bottom:0,
+      background:"rgba(0,0,0,0.55)",zIndex:9000,
+      display:"flex",alignItems:"flex-start",justifyContent:"center",
+      padding:"20px 12px",overflowY:"auto",
+    }}>
+      <div style={{
+        background:"#fff",borderRadius:14,width:"100%",maxWidth:680,
+        boxShadow:"0 8px 40px rgba(0,0,0,0.22)",
+        marginBottom:20,
+      }}>
+        {/* Header */}
+        <div style={{background:C.green,color:"#fff",padding:"16px 20px",borderRadius:"14px 14px 0 0",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:17}}>{p.first_name} {p.last_name}</div>
+            <div style={{fontSize:12,opacity:0.8,marginTop:2}}>Detailweergave punten</div>
+          </div>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:14,fontWeight:700}}>✕ Sluiten</button>
+        </div>
+
+        <div style={{padding:"16px 20px"}}>
+
+          {/* Samenvatting */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
+            {[
+              {label:"Gespeelde wedstrijden",val:played.length,icon:"⚽"},
+              {label:"Punten groepsfase",val:totalPts,icon:"🎯"},
+              {label:"Bonusvragen",val:`${Object.keys(bonusA).length}/${ctx.bonusQuestions.length}`,icon:"🎁"},
+            ].map((item,i)=>(
+              <div key={i} style={{background:"#f4f8f5",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+                <div style={{fontSize:20}}>{item.icon}</div>
+                <div style={{fontSize:18,fontWeight:800,color:C.green}}>{item.val}</div>
+                <div style={{fontSize:10,color:C.gray,marginTop:2}}>{item.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Gespeelde wedstrijden */}
+          <div style={{fontWeight:700,fontSize:13,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Gespeelde wedstrijden</div>
+          {played.length===0&&<p style={{fontSize:13,color:C.gray}}>Nog geen gespeelde wedstrijden.</p>}
+          {played.map(({mid,grp,t1,t2,result,pp,hasPred,pts})=>{
+            const ptsBg=pts===5?"#e8f5ee":pts===3?"#fff8e1":pts===0?"#fdecea":"#f5f5f5";
+            const ptsColor=pts===5?C.green:pts===3?"#7c5800":pts===0?"#c62828":C.gray;
+            const ptsLabel=pts===5?"🎯 5pt":pts===3?"✅ 3pt":pts===0?"❌ 0pt":"—";
+            return(
+              <div key={mid} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:7,marginBottom:6,background:ptsBg,border:`1px solid ${pts===5?"#b2dfdb":pts===3?"#ffe082":pts===0?"#ef9a9a":"#eee"}`}}>
+                <span style={{fontSize:10,color:C.gray,width:32,flexShrink:0}}>Gr {grp}</span>
+                <div style={{flex:1,fontSize:13}}>
+                  <span style={{fontWeight:600}}>{t1.name}</span>
+                  <span style={{color:C.gray,margin:"0 4px"}}>vs</span>
+                  <span style={{fontWeight:600}}>{t2.name}</span>
+                </div>
+                <div style={{fontSize:12,textAlign:"center",minWidth:60}}>
+                  <div style={{color:C.gray,fontSize:11}}>Uitslag</div>
+                  <div style={{fontWeight:700}}>{result.home}–{result.away}</div>
+                </div>
+                <div style={{fontSize:12,textAlign:"center",minWidth:60}}>
+                  <div style={{color:C.gray,fontSize:11}}>Voorspelling</div>
+                  <div style={{fontWeight:700,color:hasPred?C.dark:C.gray}}>{hasPred?`${pp.home}–${pp.away}`:"—"}</div>
+                </div>
+                <div style={{minWidth:52,textAlign:"right"}}>
+                  <span style={{fontSize:12,fontWeight:700,color:ptsColor}}>{ptsLabel}</span>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Nog niet gespeeld maar wel voorspeld */}
+          {notPlayed.length>0&&(
+            <>
+              <div style={{fontWeight:700,fontSize:13,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginTop:16,marginBottom:8}}>
+                Nog te spelen (voorspelling)
+              </div>
+              {notPlayed.map(({mid,grp,t1,t2,pp})=>(
+                <div key={mid} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:7,marginBottom:5,background:"#f7f7f7",border:"1px solid #e0e0e0",opacity:0.75}}>
+                  <span style={{fontSize:10,color:C.gray,width:32,flexShrink:0}}>Gr {grp}</span>
+                  <div style={{flex:1,fontSize:13,color:C.gray}}>
+                    <span>{t1.name}</span>
+                    <span style={{margin:"0 4px"}}>vs</span>
+                    <span>{t2.name}</span>
+                  </div>
+                  <div style={{fontSize:12,textAlign:"center",minWidth:60}}>
+                    <div style={{fontSize:11}}>Voorspelling</div>
+                    <div style={{fontWeight:600,color:C.gray}}>{pp.home}–{pp.away}</div>
+                  </div>
+                  <div style={{minWidth:52,textAlign:"right",fontSize:11,color:C.gray}}>nog open</div>
+                </div>
+              ))}
+            </>
+          )}
+
+          {/* Bonusvragen */}
+          {ctx.bonusQuestions.length>0&&(
+            <>
+              <div style={{fontWeight:700,fontSize:13,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginTop:16,marginBottom:8}}>Bonusvragen</div>
+              {ctx.bonusQuestions.map(q=>{
+                const answer=bonusA[q.idx];
+                const score=bonusS[q.idx];
+                const bg=score===true?"#e8f5ee":score===false?"#fdecea":"#f7f7f7";
+                const border=score===true?"#b2dfdb":score===false?"#ef9a9a":"#e0e0e0";
+                return(
+                  <div key={q.idx} style={{padding:"10px 12px",borderRadius:7,marginBottom:6,background:bg,border:`1px solid ${border}`}}>
+                    <div style={{fontSize:12,color:C.gray,marginBottom:3}}>Vraag {q.idx+1} · {q.points??20} pt</div>
+                    <div style={{fontSize:13,fontWeight:600,color:C.dark,marginBottom:4}}>{q.question}</div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6}}>
+                      <span style={{fontSize:13,color:answer?C.dark:C.gray,fontStyle:answer?"normal":"italic"}}>
+                        {answer||"Geen antwoord ingevuld"}
+                      </span>
+                      <span style={{fontSize:12,fontWeight:700,
+                        color:score===true?C.green:score===false?"#c62828":C.gray}}>
+                        {score===true?`✅ +${q.points??20} pt`:score===false?"❌ 0 pt":"⏳ Nog niet beoordeeld"}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StandingsView({ctx}){
+  const [selectedP,setSelectedP]=React.useState(null);
+
   function calcScore(uid){
     // gToto   = 3pts per wedstrijd met juiste toto (incl. exacte uitslagen)
     // gExact  = 2pts extra per wedstrijd met exacte uitslag
@@ -1953,6 +2123,7 @@ function StandingsView({ctx}){
 
   return(
     <div style={S.card}>
+      {selectedP&&<DeelnemerOverlay p={selectedP} ctx={ctx} onClose={()=>setSelectedP(null)}/>}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:16}}>
         <h2 style={{...S.h2,margin:0}}>Klassement</h2>
         {(()=>{
@@ -2011,7 +2182,9 @@ function StandingsView({ctx}){
                 <tr key={p.id} style={{background:p.rang===1?"#fffde7":i%2===0?"#f9fffe":"#fff"}}>
                   <td style={S.td}>{p.rang===1?"🥇":p.rang===2?"🥈":p.rang===3?"🥉":p.rang}</td>
                   <td style={S.tdc}><TrendBadge uid={p.id}/></td>
-                  <td style={{...S.td,fontWeight:600}}>{p.first_name} {p.last_name}</td>
+                  <td style={{...S.td,fontWeight:600,cursor:"pointer",color:COLORS.green}} onClick={()=>setSelectedP(p)}>
+                    {p.first_name} {p.last_name} <span style={{fontSize:12,opacity:0.6}}>›</span>
+                  </td>
                   <td style={S.tdc}>{p.gToto}</td><td style={S.tdc}>{p.gExact}</td><td style={S.tdc}>{p.gDoorstoot}</td>
                   <td style={S.tdc}>{p.koToto}</td><td style={S.tdc}>{p.koExact}</td>
                   <td style={S.tdc}>{p.bonus}</td>
@@ -2361,7 +2534,9 @@ function PredictieUitklap({predRows,t1,t2,hasResult,mid,isKO=false,KO_EXACT_PTS=
                   const ptsColor=isKO?(p.pts===KO_EXACT_PTS?"#fff":p.pts===KO_TOTO_PTS?COLORS.dark:"#999"):(p.pts===5?"#fff":p.pts===3?COLORS.dark:"#999");
                   return(
                     <tr key={p.id} style={{background:i%2===0?"#f9fffe":"#fff"}}>
-                      <td style={{...S.td,fontWeight:600}}>{p.first_name} {p.last_name}</td>
+                      <td style={{...S.td,fontWeight:600,cursor:"pointer",color:COLORS.green}} onClick={()=>setSelectedP(p)}>
+                    {p.first_name} {p.last_name} <span style={{fontSize:12,opacity:0.6}}>›</span>
+                  </td>
                       <td style={S.tdc}>{p.hasPred?p.pred.home:<span style={{color:COLORS.gray}}>—</span>}</td>
                       <td style={S.tdc}>{p.hasPred?p.pred.away:<span style={{color:COLORS.gray}}>—</span>}</td>
                       {!isKO&&<td style={S.tdc}>{p.hasPred?<span style={S.tag("green")}>{totoLabel}</span>:<span style={{color:COLORS.gray}}>—</span>}</td>}
@@ -2992,7 +3167,9 @@ function AdminBeoordeel({ctx}){
                 const isSaved=saved[key];
                 return(
                   <tr key={p.id} style={{background:i%2===0?"#fff":"#f9fffe",borderTop:`1px solid ${COLORS.border}`}}>
-                    <td style={{...S.td,fontWeight:600}}>{p.first_name} {p.last_name}</td>
+                    <td style={{...S.td,fontWeight:600,cursor:"pointer",color:COLORS.green}} onClick={()=>setSelectedP(p)}>
+                    {p.first_name} {p.last_name} <span style={{fontSize:12,opacity:0.6}}>›</span>
+                  </td>
                     <td style={S.td}>
                       {answer
                         ? <strong>{answer}</strong>

@@ -1190,77 +1190,130 @@ function HomeView({setView,ctx}){
       })()}
 
 
-      {/* Stijger en Daler van de dag */}
+      {/* Opvallend blok: stijgers/dalers + ratio's */}
       {(()=>{
-        if(ctx.rankingSnapshot.length===0) return null;
+        const C=COLORS;
 
-        // Get two most recent unique snapshots (by created_at batch)
-        // Groepeer op matches_played (robuust — onafhankelijk van tijdstip)
+        // ── Stijgers & dalers ──
         const mpVals2=[...new Set(ctx.rankingSnapshot.map(r=>r.matches_played??0))].sort((a,b)=>b-a);
         const meaningful2=mpVals2.filter(mp=>mp>0);
-        if(meaningful2.length<2) return null;
-        const latestSnap=ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===meaningful2[0]);
-        const prevSnap=ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===meaningful2[1]);
+        let top3stijgers=[], top3dalers=[];
+        if(meaningful2.length>=2){
+          const latestSnap=ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===meaningful2[0]);
+          const prevSnap=ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===meaningful2[1]);
+          const changes=latestSnap.map(cur=>{
+            const prev=prevSnap.find(p=>p.participant_id===cur.participant_id);
+            const participant=ctx.participants.find(p=>p.id===cur.participant_id);
+            if(!prev||!participant) return null;
+            return{name:`${participant.first_name} ${participant.last_name}`,rankNow:cur.rank,rankPrev:prev.rank,change:prev.rank-cur.rank};
+          }).filter(Boolean);
+          top3stijgers=changes.filter(c=>c.change>0).sort((a,b)=>b.change-a.change||a.rankNow-b.rankNow).slice(0,3);
+          top3dalers=changes.filter(c=>c.change<0).sort((a,b)=>a.change-b.change||b.rankNow-a.rankNow).slice(0,3);
+        }
 
-        // Calculate rank changes
-        const changes=latestSnap.map(cur=>{
-          const prev=prevSnap.find(p=>p.participant_id===cur.participant_id);
-          const participant=ctx.participants.find(p=>p.id===cur.participant_id);
-          if(!prev||!participant) return null;
-          return{
-            name:`${participant.first_name} ${participant.last_name}`,
-            rankNow:cur.rank,
-            rankPrev:prev.rank,
-            change:prev.rank-cur.rank, // positive = moved up
-          };
-        }).filter(Boolean);
+        // ── Ratio groep toto & exact ──
+        const playedMids=Object.keys(ctx.matchResults).filter(mid=>ctx.matchResults[mid]&&ctx.matchResults[mid].home!==null);
+        const ratios=ctx.participants.map(p=>{
+          const pred=ctx.predictions[p.id]||{};
+          let totoOk=0,exactOk=0,total=0;
+          playedMids.forEach(mid=>{
+            const pp=pred[mid];
+            const r=ctx.matchResults[mid];
+            if(!pp||pp.home===undefined||pp.home===null||pp.away===undefined||pp.away===null) return;
+            total++;
+            const ex=parseInt(pp.home)===parseInt(r.home)&&parseInt(pp.away)===parseInt(r.away);
+            const to=calcToto(pp.home,pp.away)===calcToto(r.home,r.away);
+            if(ex){totoOk++;exactOk++;}else if(to){totoOk++;}
+          });
+          return{name:`${p.first_name} ${p.last_name}`,totoOk,exactOk,total};
+        }).filter(r=>r.total>0);
 
-        const stijger=changes.reduce((best,c)=>{
-          if(c.change<=0) return best;
-          if(!best) return c;
-          if(c.change>best.change) return c;
-          if(c.change===best.change&&c.rankNow<best.rankNow) return c;
-          return best;
-        },null);
-        const daler=changes.reduce((worst,c)=>{
-          if(c.change>=0) return worst;
-          if(!worst) return c;
-          if(c.change<worst.change) return c;
-          if(c.change===worst.change&&c.rankNow>worst.rankNow) return c;
-          return worst;
-        },null);
+        const top3toto=[...ratios].sort((a,b)=>(b.totoOk/b.total)-(a.totoOk/a.total)||b.totoOk-a.totoOk).slice(0,3);
+        const top3exact=[...ratios].sort((a,b)=>(b.exactOk/b.total)-(a.exactOk/a.total)||b.exactOk-a.exactOk).slice(0,3);
 
-        if(!stijger&&!daler) return null;
+        const hasAny=top3stijgers.length>0||top3dalers.length>0||top3toto.length>0||top3exact.length>0;
+        if(!hasAny) return null;
 
         return(
           <div style={S.card}>
-            <h2 style={{...S.h2,marginBottom:14}}>Sterkste stijger & daler</h2>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              {stijger&&(
-                <div style={{background:"#e8f5ee",borderRadius:8,padding:"12px 14px",border:`1px solid ${COLORS.green}`}}>
-                  <div style={{fontSize:11,fontWeight:700,color:COLORS.green,textTransform:"uppercase",marginBottom:6}}>⬆️ Stijger</div>
-                  <div style={{fontWeight:700,fontSize:14,marginBottom:4}}>{stijger.name}</div>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{fontSize:13,color:COLORS.gray}}>#{stijger.rankPrev}</span>
-                    <span style={{color:COLORS.green,fontSize:16}}>→</span>
-                    <span style={{fontSize:15,fontWeight:800,color:COLORS.green}}>#{stijger.rankNow}</span>
-                    <span style={{...S.tag("green"),marginLeft:4}}>+{stijger.change} {stijger.change===1?"plek":"plekken"}</span>
+            <h2 style={{...S.h2,marginBottom:16}}>⚡ Opvallend</h2>
+
+            {/* Stijgers & dalers */}
+            {(top3stijgers.length>0||top3dalers.length>0)&&(
+              <div style={{marginBottom:20}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Top 3 sterkste stijgers & dalers</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                  {/* Stijgers */}
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,color:C.green,textTransform:"uppercase",marginBottom:6}}>⬆️ Stijgers</div>
+                    {top3stijgers.map((c,i)=>(
+                      <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 0",borderBottom:i<top3stijgers.length-1?`1px solid ${C.border}`:"none"}}>
+                        <span style={{fontSize:12,color:C.gray,width:16,flexShrink:0}}>{i+1}</span>
+                        <span style={{flex:1,fontSize:13,fontWeight:600}}>{c.name}</span>
+                        <span style={{fontSize:12,color:C.gray}}>#{c.rankPrev}</span>
+                        <span style={{color:C.green,fontSize:13}}>→</span>
+                        <span style={{fontSize:13,fontWeight:800,color:C.green}}>#{c.rankNow}</span>
+                        <span style={{...S.tag("green"),fontSize:10}}>+{c.change}</span>
+                      </div>
+                    ))}
+                    {top3stijgers.length===0&&<p style={{fontSize:12,color:C.gray}}>—</p>}
+                  </div>
+                  {/* Dalers */}
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,color:"#c62828",textTransform:"uppercase",marginBottom:6}}>⬇️ Dalers</div>
+                    {top3dalers.map((c,i)=>(
+                      <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 0",borderBottom:i<top3dalers.length-1?`1px solid ${C.border}`:"none"}}>
+                        <span style={{fontSize:12,color:C.gray,width:16,flexShrink:0}}>{i+1}</span>
+                        <span style={{flex:1,fontSize:13,fontWeight:600}}>{c.name}</span>
+                        <span style={{fontSize:12,color:C.gray}}>#{c.rankPrev}</span>
+                        <span style={{color:"#c62828",fontSize:13}}>→</span>
+                        <span style={{fontSize:13,fontWeight:800,color:"#c62828"}}>#{c.rankNow}</span>
+                        <span style={{background:"#fdecea",color:"#c62828",fontSize:10,fontWeight:600,padding:"2px 6px",borderRadius:4,border:"1px solid #ef9a9a"}}>-{Math.abs(c.change)}</span>
+                      </div>
+                    ))}
+                    {top3dalers.length===0&&<p style={{fontSize:12,color:C.gray}}>—</p>}
                   </div>
                 </div>
-              )}
-              {daler&&(
-                <div style={{background:"#fdecea",borderRadius:8,padding:"12px 14px",border:"1px solid #ef9a9a"}}>
-                  <div style={{fontSize:11,fontWeight:700,color:"#c62828",textTransform:"uppercase",marginBottom:6}}>⬇️ Daler</div>
-                  <div style={{fontWeight:700,fontSize:14,marginBottom:4}}>{daler.name}</div>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{fontSize:13,color:COLORS.gray}}>#{daler.rankPrev}</span>
-                    <span style={{color:"#c62828",fontSize:16}}>→</span>
-                    <span style={{fontSize:15,fontWeight:800,color:"#c62828"}}>#{daler.rankNow}</span>
-                    <span style={{background:"#fdecea",color:"#c62828",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,border:"1px solid #ef9a9a",marginLeft:4}}>{Math.abs(daler.change)} {Math.abs(daler.change)===1?"plek":"plekken"}</span>
+              </div>
+            )}
+
+            {/* Ratio's */}
+            {top3toto.length>0&&(
+              <div style={{marginBottom:16}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                  {/* Groep toto ratio */}
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>🎯 Beste groep toto ratio</div>
+                    {top3toto.map((r,i)=>{
+                      const pct=Math.round(r.totoOk/r.total*100);
+                      return(
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:i<top3toto.length-1?`1px solid ${C.border}`:"none"}}>
+                          <span style={{fontSize:12,color:C.gray,width:16,flexShrink:0}}>{i+1}</span>
+                          <span style={{flex:1,fontSize:13,fontWeight:600}}>{r.name}</span>
+                          <span style={{fontSize:12,color:C.gray}}>{r.totoOk}/{r.total}</span>
+                          <span style={{fontSize:12,fontWeight:700,color:C.green,minWidth:40,textAlign:"right"}}>{pct}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Groep exact ratio */}
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>🏆 Beste groep exact ratio</div>
+                    {top3exact.map((r,i)=>{
+                      const pct=Math.round(r.exactOk/r.total*100);
+                      return(
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:i<top3exact.length-1?`1px solid ${C.border}`:"none"}}>
+                          <span style={{fontSize:12,color:C.gray,width:16,flexShrink:0}}>{i+1}</span>
+                          <span style={{flex:1,fontSize:13,fontWeight:600}}>{r.name}</span>
+                          <span style={{fontSize:12,color:C.gray}}>{r.exactOk}/{r.total}</span>
+                          <span style={{fontSize:12,fontWeight:700,color:"#1565c0",minWidth:40,textAlign:"right"}}>{pct}%</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         );
       })()}

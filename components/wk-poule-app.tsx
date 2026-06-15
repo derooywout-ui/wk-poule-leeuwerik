@@ -1195,18 +1195,12 @@ function HomeView({setView,ctx}){
         if(ctx.rankingSnapshot.length===0) return null;
 
         // Get two most recent unique snapshots (by created_at batch)
-        const allTs2=[...new Set(ctx.rankingSnapshot.map(r=>r.created_at))].sort().reverse();
-        const batches2=[];let cb2=[allTs2[0]];
-        for(let i=1;i<allTs2.length;i++){const diff=(new Date(allTs2[i-1])-new Date(allTs2[i]))/60000;if(diff>2){batches2.push(cb2);cb2=[];}cb2.push(allTs2[i]);}
-        batches2.push(cb2);
-        // Sla batches over waarbij iedereen rank 1 heeft (nul-stand vóór eerste wedstrijd)
-        const meaningful2=batches2.filter(batch=>{
-          const rows=ctx.rankingSnapshot.filter(r=>new Set(batch).has(r.created_at));
-          return rows.some(r=>r.rank>1||r.total>0);
-        });
+        // Groepeer op matches_played (robuust — onafhankelijk van tijdstip)
+        const mpVals2=[...new Set(ctx.rankingSnapshot.map(r=>r.matches_played??0))].sort((a,b)=>b-a);
+        const meaningful2=mpVals2.filter(mp=>mp>0);
         if(meaningful2.length<2) return null;
-        const latestSnap=ctx.rankingSnapshot.filter(r=>new Set(meaningful2[0]).has(r.created_at));
-        const prevSnap=ctx.rankingSnapshot.filter(r=>new Set(meaningful2[1]).has(r.created_at));
+        const latestSnap=ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===meaningful2[0]);
+        const prevSnap=ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===meaningful2[1]);
 
         // Calculate rank changes
         const changes=latestSnap.map(cur=>{
@@ -2155,26 +2149,15 @@ function StandingsView({ctx}){
   // Calculate trend: detecteer batches door snapshots te clusteren op tijdsverschil > 2 min
   const trendMap={};
   if(ctx.rankingSnapshot.length>0){
-    const allTs=[...new Set(ctx.rankingSnapshot.map(r=>r.created_at))].sort().reverse();
-    // Groepeer: nieuwe batch als tijdsverschil > 2 minuten
-    const batches=[];
-    let currentBatch=[allTs[0]];
-    for(let i=1;i<allTs.length;i++){
-      const diff=(new Date(allTs[i-1])-new Date(allTs[i]))/1000/60;
-      if(diff>2){batches.push(currentBatch);currentBatch=[];}
-      currentBatch.push(allTs[i]);
-    }
-    batches.push(currentBatch);
-    // Sla batches over waarbij iedereen rank 1 heeft (nul-stand vóór eerste wedstrijd)
-    const meaningfulBatches=batches.filter(batch=>{
-      const rows=ctx.rankingSnapshot.filter(r=>new Set(batch).has(r.created_at));
-      return rows.some(r=>r.rank>1||r.total>0);
-    });
-    if(meaningfulBatches.length>=2){
-      const latestTs=new Set(meaningfulBatches[0]);
-      const prevTs=new Set(meaningfulBatches[1]);
-      const latest=ctx.rankingSnapshot.filter(r=>latestTs.has(r.created_at));
-      const prev=ctx.rankingSnapshot.filter(r=>prevTs.has(r.created_at));
+    // Groepeer snapshots op matches_played (robuust — onafhankelijk van tijdstip)
+    const mpValues=[...new Set(ctx.rankingSnapshot.map(r=>r.matches_played??0))].sort((a,b)=>b-a);
+    // Sla matches_played=0 over (nul-stand vóór eerste wedstrijd)
+    const meaningful=mpValues.filter(mp=>mp>0);
+    if(meaningful.length>=2){
+      const latestMp=meaningful[0];
+      const prevMp=meaningful[1];
+      const latest=ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===latestMp);
+      const prev=ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===prevMp);
       latest.forEach(cur=>{
         const p=prev.find(x=>x.participant_id===cur.participant_id);
         if(p) trendMap[cur.participant_id]=p.rank-cur.rank;
@@ -2333,10 +2316,13 @@ async function saveRankingSnapshot(participants, predictions, matchResults, koPr
     return total;
   }
 
+  const matchesPlayedNow=Object.keys(matchResults).length+
+    koMatches.filter(m=>m.home_goals!==null&&m.home_goals!==undefined).length;
+
   const ranked=participants
     .map(p=>({id:p.id,total:calcTotal(p.id)}))
     .sort((a,b)=>b.total-a.total)
-    .map((p,i)=>({participant_id:p.id,rank:i+1,total:p.total}));
+    .map((p,i)=>({participant_id:p.id,rank:i+1,total:p.total,matches_played:matchesPlayedNow}));
 
   await fetch(`${SUPABASE_URL}/rest/v1/rankings_snapshot`,{
     method:"POST",

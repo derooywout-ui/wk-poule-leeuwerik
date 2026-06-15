@@ -71,6 +71,23 @@ const FLAG_CODES = {
   "Engeland":"gb-eng","Kroatië":"hr","Ghana":"gh","Panama":"pa",
 };
 
+// ─── NL→EN TEAM ALIAS MAP (voor doorstoot matching) ─────────────────────────
+const NL_TO_EN_ALIAS = {
+  "Mexico":"mexico","Zuid-Afrika":"south africa","Zuid-Korea":"korea republic",
+  "Tsjechië":"czechia","Canada":"canada","Bosnië-Herzegovina":"bosnia and herzegovina",
+  "Qatar":"qatar","Zwitserland":"switzerland","Brazilië":"brazil","Marokko":"morocco",
+  "Haïti":"haiti","Schotland":"scotland","VS":"usa","Paraguay":"paraguay",
+  "Australië":"australia","Turkije":"turkiye","Duitsland":"germany","Curaçao":"curacao",
+  "Ivoorkust":"cote divoire","Ecuador":"ecuador","Nederland":"netherlands","Japan":"japan",
+  "Zweden":"sweden","Tunesië":"tunisia","België":"belgium","Egypte":"egypt",
+  "Iran":"ir iran","Nieuw-Zeeland":"new zealand","Spanje":"spain","Kaapverdië":"cape verde",
+  "Saoedi-Arabië":"saudi arabia","Uruguay":"uruguay","Frankrijk":"france","Senegal":"senegal",
+  "Irak":"iraq","Noorwegen":"norway","Argentinië":"argentina","Algerije":"algeria",
+  "Oostenrijk":"austria","Jordanië":"jordan","Portugal":"portugal","DR Congo":"dr congo",
+  "Oezbekistan":"uzbekistan","Colombia":"colombia","Engeland":"england","Kroatië":"croatia",
+  "Ghana":"ghana","Panama":"panama",
+};
+
 function FlagImg({ name, size=20 }) {
   const code = FLAG_CODES[name];
   if (!code) return <span>🏳️</span>;

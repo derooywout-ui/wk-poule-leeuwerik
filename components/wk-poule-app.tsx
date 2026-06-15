@@ -1142,7 +1142,8 @@ function HomeView({setView,ctx}){
           const predAdv=calcDoorstootFromPredictions(pred);
           if(ctx.doorstootLanden&&ctx.doorstootLanden.length>0){
             predAdv.forEach(t=>{
-              if(ctx.doorstootLanden.includes(t)) gDoorstoot+=DOORSTOOT_PTS;
+              const enNaam=NL_TO_EN_ALIAS[t]||t.toLowerCase();
+              if(ctx.doorstootLanden.includes(enNaam)) gDoorstoot+=DOORSTOOT_PTS;
             });
           }
           ctx.koMatches.forEach(match=>{
@@ -2171,11 +2172,12 @@ function StandingsView({ctx}){
     });
 
     // Doorstoot punten (groepsfase -> r16)
-    // Op basis van doorstoot_landen tabel (automatisch gevuld door Apps Script, override via admin)
+    // doorstoot_landen bevat Engelse namen; predAdv bevat NL namen → vertaal via NL_TO_EN_ALIAS
     const predAdv=calcDoorstootFromPredictions(pred);
     if(ctx.doorstootLanden&&ctx.doorstootLanden.length>0){
       predAdv.forEach(t=>{
-        if(ctx.doorstootLanden.includes(t)) gDoorstoot+=DOORSTOOT_PTS;
+        const enNaam=NL_TO_EN_ALIAS[t]||t.toLowerCase();
+        if(ctx.doorstootLanden.includes(enNaam)) gDoorstoot+=DOORSTOOT_PTS;
       });
     }
 
@@ -3205,24 +3207,8 @@ function AdminDoorstoot({ctx}){
   }
 
   // Map NL-namen naar genormaliseerde namen (zelfde als Apps Script alias map)
-  const ALIAS_MAP = {
-    "Mexico":"mexico","Zuid-Afrika":"south africa","Zuid-Korea":"korea republic",
-    "Tsjechië":"czechia","Canada":"canada","Bosnië-Herzegovina":"bosnia and herzegovina",
-    "Qatar":"qatar","Zwitserland":"switzerland","Brazilië":"brazil","Marokko":"morocco",
-    "Haïti":"haiti","Schotland":"scotland","VS":"usa","Paraguay":"paraguay",
-    "Australië":"australia","Turkije":"turkiye","Duitsland":"germany","Curaçao":"curacao",
-    "Ivoorkust":"cote divoire","Ecuador":"ecuador","Nederland":"netherlands","Japan":"japan",
-    "Zweden":"sweden","Tunesië":"tunisia","België":"belgium","Egypte":"egypt",
-    "Iran":"ir iran","Nieuw-Zeeland":"new zealand","Spanje":"spain","Kaapverdië":"cape verde",
-    "Saoedi-Arabië":"saudi arabia","Uruguay":"uruguay","Frankrijk":"france","Senegal":"senegal",
-    "Irak":"iraq","Noorwegen":"norway","Argentinië":"argentina","Algerije":"algeria",
-    "Oostenrijk":"austria","Jordanië":"jordan","Portugal":"portugal","DR Congo":"dr congo",
-    "Oezbekistan":"uzbekistan","Colombia":"colombia","Engeland":"england","Kroatië":"croatia",
-    "Ghana":"ghana","Panama":"panama",
-  };
-
   async function toggleLand(nlNaam, isAan){
-    const genNaam = ALIAS_MAP[nlNaam] || normalizeName(nlNaam);
+    const genNaam = NL_TO_EN_ALIAS[nlNaam] || normalizeName(nlNaam);
     setSaving(p=>({...p,[nlNaam]:true}));
     if(isAan){
       // Verwijderen uit doorstoot_landen
@@ -3259,7 +3245,7 @@ function AdminDoorstoot({ctx}){
           <h3 style={{...S.h3,marginBottom:10}}>Groep {grp}</h3>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
             {teams.map(team=>{
-              const genNaam = ALIAS_MAP[team.name] || normalizeName(team.name);
+              const genNaam = NL_TO_EN_ALIAS[team.name] || normalizeName(team.name);
               const isAan = ctx.doorstootLanden.includes(genNaam);
               const isSaving = saving[team.name];
               return(

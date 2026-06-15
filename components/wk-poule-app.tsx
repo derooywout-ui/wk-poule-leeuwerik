@@ -1292,7 +1292,7 @@ function HomeView({setView,ctx}){
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   {/* Groep toto ratio */}
                   <div>
-                    <div style={{fontSize:11,fontWeight:700,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>🎯 Beste groep toto ratio</div>
+                    <div style={{fontSize:11,fontWeight:700,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}><span style={{fontWeight:900,fontSize:12,background:C.green,color:"#fff",borderRadius:4,padding:"1px 5px",marginRight:4}}>W/V/G</span> Beste groep toto ratio</div>
                     {top3toto.map((r,i)=>{
                       const pct=Math.round(r.totoOk/r.total*100);
                       return(
@@ -1307,7 +1307,7 @@ function HomeView({setView,ctx}){
                   </div>
                   {/* Groep exact ratio */}
                   <div>
-                    <div style={{fontSize:11,fontWeight:700,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>🏆 Beste groep exact ratio</div>
+                    <div style={{fontSize:11,fontWeight:700,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>🎯 Beste groep exact ratio</div>
                     {top3exact.map((r,i)=>{
                       const pct=Math.round(r.exactOk/r.total*100);
                       return(
@@ -2005,7 +2005,7 @@ function DeelnemerOverlay({p, ctx, onClose}){
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
             {[
               {label:"Gespeelde wedstrijden",val:played.length,icon:"⚽"},
-              {label:"Punten groepsfase",val:totalPts,icon:"🎯"},
+              {label:"Punten groepsfase",val:totalPts,icon:"⭐"},
               {label:"Bonusvragen",val:`${Object.keys(bonusA).length}/${ctx.bonusQuestions.length}`,icon:"🎁"},
             ].map((item,i)=>(
               <div key={i} style={{background:"#f4f8f5",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>

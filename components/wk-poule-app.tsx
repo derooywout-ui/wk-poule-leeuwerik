@@ -1199,8 +1199,17 @@ function HomeView({setView,ctx}){
         const meaningful2=mpVals2.filter(mp=>mp>0);
         let top3stijgers=[], top3dalers=[];
         if(meaningful2.length>=2){
-          const latestSnap=ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===meaningful2[0]);
-          const prevSnap=ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===meaningful2[1]);
+          // Dedupliceer: per deelnemer alleen de laatste rij per matches_played groep
+          function dedupSnap(rows){
+            const map={};
+            rows.forEach(r=>{
+              const key=r.participant_id;
+              if(!map[key]||new Date(r.created_at)>new Date(map[key].created_at)) map[key]=r;
+            });
+            return Object.values(map);
+          }
+          const latestSnap=dedupSnap(ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===meaningful2[0]));
+          const prevSnap=dedupSnap(ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===meaningful2[1]));
           const changes=latestSnap.map(cur=>{
             const prev=prevSnap.find(p=>p.participant_id===cur.participant_id);
             const participant=ctx.participants.find(p=>p.id===cur.participant_id);
@@ -2206,11 +2215,18 @@ function StandingsView({ctx}){
     const mpValues=[...new Set(ctx.rankingSnapshot.map(r=>r.matches_played??0))].sort((a,b)=>b-a);
     // Sla matches_played=0 over (nul-stand vóór eerste wedstrijd)
     const meaningful=mpValues.filter(mp=>mp>0);
+    function dedupSnap2(rows){
+      const map={};
+      rows.forEach(r=>{
+        if(!map[r.participant_id]||new Date(r.created_at)>new Date(map[r.participant_id].created_at)) map[r.participant_id]=r;
+      });
+      return Object.values(map);
+    }
     if(meaningful.length>=2){
       const latestMp=meaningful[0];
       const prevMp=meaningful[1];
-      const latest=ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===latestMp);
-      const prev=ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===prevMp);
+      const latest=dedupSnap2(ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===latestMp));
+      const prev=dedupSnap2(ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===prevMp));
       latest.forEach(cur=>{
         const p=prev.find(x=>x.participant_id===cur.participant_id);
         if(p) trendMap[cur.participant_id]=p.rank-cur.rank;

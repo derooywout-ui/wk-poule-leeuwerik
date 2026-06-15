@@ -472,11 +472,12 @@ export default function App(){
   const [rankingSnapshot,setRankingSnapshot]=useState([]);
   const [newsItems,setNewsItems]=useState([]);
   const [rssItems,setRssItems]=useState([]);
+  const [doorstootLanden,setDoorstootLanden]=useState([]);
   const [loading,setLoading]=useState(true);
 
   const loadAll=useCallback(async()=>{
     setLoading(true);
-    const [parts,results,preds,bq,ba,bs,kom,kop,snap,news,rss]=await Promise.all([
+    const [parts,results,preds,bq,ba,bs,kom,kop,snap,news,rss,doorstoot]=await Promise.all([
       db.get("participants","select=*&order=created_at"),
       db.get("match_results","select=*"),
       db.get("predictions","select=*&limit=10000"),
@@ -488,6 +489,7 @@ export default function App(){
       db.get("rankings_snapshot","select=*&order=created_at.desc&limit=200"),
       db.get("news_items","select=*&order=created_at.desc&limit=3"),
       db.get("rss_items","select=*&order=pub_date.desc&limit=5"),
+      db.get("doorstoot_landen","select=team_name"),
     ]);
     if(parts) setParticipants(parts);
     if(results){
@@ -524,6 +526,7 @@ export default function App(){
     if(snap) setRankingSnapshot(snap);
     if(news) setNewsItems(news);
     if(rss) setRssItems(rss);
+    if(doorstoot) setDoorstootLanden(doorstoot.map(r=>r.team_name));
     if(kop){
       const k={};
       kop.forEach(r=>{
@@ -573,6 +576,7 @@ export default function App(){
     rankingSnapshot,setRankingSnapshot,
     newsItems,setNewsItems,
     rssItems,setRssItems,
+    doorstootLanden,setDoorstootLanden,
   };
 
   if(loading) return <div style={{...S.app,display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:12}}><div style={{fontSize:32}}>⚽</div><div style={{fontSize:15,color:COLORS.gray}}>Laden…</div></div>;
@@ -1136,8 +1140,11 @@ function HomeView({setView,ctx}){
             else if(totoOk){gToto+=3;gTotoCount++;}
           });
           const predAdv=calcDoorstootFromPredictions(pred);
-          const r16teams=[...new Set(ctx.koMatches.filter(m=>m.round_id==="r16"&&m.home_team&&m.away_team).flatMap(m=>[m.home_team,m.away_team]))];
-          if(r16teams.length>0) predAdv.forEach(t=>{if(r16teams.includes(t))gDoorstoot+=DOORSTOOT_PTS;});
+          if(ctx.doorstootLanden&&ctx.doorstootLanden.length>0){
+            predAdv.forEach(t=>{
+              if(ctx.doorstootLanden.includes(t)) gDoorstoot+=DOORSTOOT_PTS;
+            });
+          }
           ctx.koMatches.forEach(match=>{
             if(!match.home_team||!match.away_team||match.home_goals===null||match.home_goals===undefined) return;
             const p=koPred[match.id];
@@ -2164,10 +2171,13 @@ function StandingsView({ctx}){
     });
 
     // Doorstoot punten (groepsfase -> r16)
+    // Op basis van doorstoot_landen tabel (automatisch gevuld door Apps Script, override via admin)
     const predAdv=calcDoorstootFromPredictions(pred);
-    const r16matches=ctx.koMatches.filter(m=>m.round_id==="r16"&&m.home_team&&m.away_team);
-    const actualR16teams=[...new Set(r16matches.flatMap(m=>[m.home_team,m.away_team]))];
-    if(actualR16teams.length>0) predAdv.forEach(t=>{if(actualR16teams.includes(t))gDoorstoot+=DOORSTOOT_PTS;});
+    if(ctx.doorstootLanden&&ctx.doorstootLanden.length>0){
+      predAdv.forEach(t=>{
+        if(ctx.doorstootLanden.includes(t)) gDoorstoot+=DOORSTOOT_PTS;
+      });
+    }
 
     // KO wedstrijd punten
     ctx.koMatches.forEach(match=>{
@@ -2368,6 +2378,7 @@ async function saveRankingSnapshot(participants, predictions, matchResults, koPr
       const totoOk=calcToto(p.home,p.away)===calcToto(result.home,result.away);
       if(exactOk)total+=5;else if(totoOk)total+=3;
     });
+    // saveRankingSnapshot gebruikt koMatches als fallback (server-side heeft geen doorstootLanden state)
     const predAdv=calcDoorstootFromPredictions(pred);
     const r16teams=[...new Set(koMatches.filter(m=>m.round_id==="r16"&&m.home_team&&m.away_team).flatMap(m=>[m.home_team,m.away_team]))];
     if(r16teams.length>0) predAdv.forEach(t=>{if(r16teams.includes(t))total+=DOORSTOOT_PTS;});
@@ -2921,13 +2932,14 @@ function AdminView({ctx}){
       <button style={S.btn("green")} onClick={()=>pw===ADMIN_PASSWORD?ctx.setIsAdmin(true):setPwErr("Onjuist wachtwoord")}>Inloggen</button>
     </div>
   );
-  const tabs=[{id:"results",label:"📊 Uitslagen"},{id:"ko",label:"⚡ Knock-out"},{id:"bonus",label:"🎁 Bonusvragen"},{id:"beoordeel",label:"✅ Beoordelen"},{id:"users",label:"Deelnemers"},{id:"news",label:"📢 Nieuws"},{id:"instellingen",label:"🛠️ Instellingen"}];
+  const tabs=[{id:"results",label:"📊 Uitslagen"},{id:"ko",label:"⚡ Knock-out"},{id:"doorstoot",label:"🏆 Doorstoot"},{id:"bonus",label:"🎁 Bonusvragen"},{id:"beoordeel",label:"✅ Beoordelen"},{id:"users",label:"Deelnemers"},{id:"news",label:"📢 Nieuws"},{id:"instellingen",label:"🛠️ Instellingen"}];
   return(
     <div>
       <div style={{...S.row,marginBottom:14}}><h2 style={{...S.h2,margin:0}}>⚙️ Beheerderspaneel</h2><span style={S.tag("green")}>Admin ingelogd</span></div>
       <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>{tabs.map(t=><button key={t.id} style={S.navBtn(tab===t.id)} onClick={()=>setAdminTab(t.id)}>{t.label}</button>)}</div>
       {tab==="results"&&<AdminResults ctx={ctx}/>}
       {tab==="ko"&&<AdminKO ctx={ctx}/>}
+      {tab==="doorstoot"&&<AdminDoorstoot ctx={ctx}/>}
       {tab==="bonus"&&<AdminBonus ctx={ctx}/>}
       {tab==="beoordeel"&&<AdminBeoordeel ctx={ctx}/>}
       {tab==="users"&&<AdminUsers ctx={ctx}/>}
@@ -3175,6 +3187,113 @@ function AdminKO({ctx}){
   );
 }
 
+
+
+// ─── ADMIN DOORSTOOT ─────────────────────────────────────────────────────────
+function AdminDoorstoot({ctx}){
+  const C = COLORS;
+  const [saving, setSaving] = React.useState({});
+
+  // Genormaliseerde naam (lowercase, accenten weg) voor matching met doorstoot_landen
+  function normalizeName(name){
+    return name.toLowerCase()
+      .replace(/[àáâãäå]/g,'a').replace(/[èéêë]/g,'e')
+      .replace(/[ìíîï]/g,'i').replace(/[òóôõö]/g,'o')
+      .replace(/[ùúûü]/g,'u').replace(/[ç]/g,'c')
+      .replace(/[ñ]/g,'n').replace(/[ý]/g,'y')
+      .replace(/[^a-z0-9 ]/g,'').trim();
+  }
+
+  // Map NL-namen naar genormaliseerde namen (zelfde als Apps Script alias map)
+  const ALIAS_MAP = {
+    "Mexico":"mexico","Zuid-Afrika":"south africa","Zuid-Korea":"korea republic",
+    "Tsjechië":"czechia","Canada":"canada","Bosnië-Herzegovina":"bosnia and herzegovina",
+    "Qatar":"qatar","Zwitserland":"switzerland","Brazilië":"brazil","Marokko":"morocco",
+    "Haïti":"haiti","Schotland":"scotland","VS":"usa","Paraguay":"paraguay",
+    "Australië":"australia","Turkije":"turkiye","Duitsland":"germany","Curaçao":"curacao",
+    "Ivoorkust":"cote divoire","Ecuador":"ecuador","Nederland":"netherlands","Japan":"japan",
+    "Zweden":"sweden","Tunesië":"tunisia","België":"belgium","Egypte":"egypt",
+    "Iran":"ir iran","Nieuw-Zeeland":"new zealand","Spanje":"spain","Kaapverdië":"cape verde",
+    "Saoedi-Arabië":"saudi arabia","Uruguay":"uruguay","Frankrijk":"france","Senegal":"senegal",
+    "Irak":"iraq","Noorwegen":"norway","Argentinië":"argentina","Algerije":"algeria",
+    "Oostenrijk":"austria","Jordanië":"jordan","Portugal":"portugal","DR Congo":"dr congo",
+    "Oezbekistan":"uzbekistan","Colombia":"colombia","Engeland":"england","Kroatië":"croatia",
+    "Ghana":"ghana","Panama":"panama",
+  };
+
+  async function toggleLand(nlNaam, isAan){
+    const genNaam = ALIAS_MAP[nlNaam] || normalizeName(nlNaam);
+    setSaving(p=>({...p,[nlNaam]:true}));
+    if(isAan){
+      // Verwijderen uit doorstoot_landen
+      await fetch(`${SUPABASE_URL}/rest/v1/doorstoot_landen?team_name=eq.${encodeURIComponent(genNaam)}`,{
+        method:"DELETE",
+        headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,Prefer:"return=minimal"},
+      });
+      ctx.setDoorstootLanden(p=>p.filter(t=>t!==genNaam));
+    } else {
+      // Toevoegen aan doorstoot_landen
+      await fetch(`${SUPABASE_URL}/rest/v1/doorstoot_landen`,{
+        method:"POST",
+        headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
+        body:JSON.stringify([{team_name:genNaam}]),
+      });
+      ctx.setDoorstootLanden(p=>[...p,genNaam]);
+    }
+    setSaving(p=>({...p,[nlNaam]:false}));
+  }
+
+  return(
+    <div>
+      <div style={{...S.alert(""),marginBottom:14,fontSize:13,lineHeight:1.6}}>
+        <strong>Automatisch:</strong> de Apps Script vult dit elke 15 minuten bij op basis van de standings API.<br/>
+        <strong>Handmatig override:</strong> vink een land aan of uit als de API achterloopt.
+        <br/><span style={{fontSize:11,color:C.gray}}>Aangevinkt = land staat in <code>doorstoot_landen</code> tabel en telt mee voor punten.</span>
+      </div>
+      <div style={{...S.card,marginBottom:8,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <span style={{fontSize:13,fontWeight:700,color:C.green}}>{ctx.doorstootLanden.length} landen doorgestoten</span>
+        <span style={{fontSize:12,color:C.gray}}>van maximaal 32 (top 2 per groep + 8 beste nummers 3)</span>
+      </div>
+      {Object.entries(WK_GROUPS).map(([grp,teams])=>(
+        <div key={grp} style={{...S.card,marginBottom:10}}>
+          <h3 style={{...S.h3,marginBottom:10}}>Groep {grp}</h3>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {teams.map(team=>{
+              const genNaam = ALIAS_MAP[team.name] || normalizeName(team.name);
+              const isAan = ctx.doorstootLanden.includes(genNaam);
+              const isSaving = saving[team.name];
+              return(
+                <div key={team.name} style={{
+                  display:"flex",alignItems:"center",gap:10,padding:"8px 12px",
+                  borderRadius:8,border:`1px solid ${isAan?C.green:C.border}`,
+                  background:isAan?"#e8f5ee":"#fff",
+                  transition:"all 0.15s",
+                }}>
+                  <FlagImg name={team.name} size={20}/>
+                  <span style={{flex:1,fontWeight:600,fontSize:13}}>{team.name}</span>
+                  {isAan&&<span style={{...S.tag("green"),fontSize:11}}>✓ Doorgestoten</span>}
+                  <button
+                    onClick={()=>toggleLand(team.name,isAan)}
+                    disabled={isSaving}
+                    style={{
+                      padding:"5px 14px",borderRadius:6,border:"none",cursor:isSaving?"wait":"pointer",
+                      fontWeight:700,fontSize:12,
+                      background:isAan?"#fdecea":C.green,
+                      color:isAan?"#c62828":"#fff",
+                      opacity:isSaving?0.6:1,
+                    }}
+                  >
+                    {isSaving?"…":isAan?"✕ Verwijderen":"✓ Aanvinken"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function AdminBonus({ctx}){
   const [questions,setQuestions]=useState(ctx.bonusQuestions.length>0?ctx.bonusQuestions:[]);

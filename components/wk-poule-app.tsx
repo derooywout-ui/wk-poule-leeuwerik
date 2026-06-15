@@ -2324,11 +2324,14 @@ async function saveRankingSnapshot(participants, predictions, matchResults, koPr
     .sort((a,b)=>b.total-a.total)
     .map((p,i)=>({participant_id:p.id,rank:i+1,total:p.total,matches_played:matchesPlayedNow}));
 
-  await fetch(`${SUPABASE_URL}/rest/v1/rankings_snapshot`,{
+  // Debug: log wat we proberen op te slaan
+  console.log("saveRankingSnapshot: opslaan", ranked.length, "rijen, matches_played:", matchesPlayedNow);
+  const snapResp = await fetch(`${SUPABASE_URL}/rest/v1/rankings_snapshot`,{
     method:"POST",
-    headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=representation"},
+    headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},
     body:JSON.stringify(ranked),
   });
+  console.log("saveRankingSnapshot HTTP:", snapResp.status, await snapResp.text());
 
   // Reload snapshot
   const snap=await fetch(`${SUPABASE_URL}/rest/v1/rankings_snapshot?select=*&order=created_at.desc&limit=200`,{

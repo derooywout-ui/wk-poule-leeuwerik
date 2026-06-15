@@ -2920,7 +2920,12 @@ function AdminResults({ctx}){
       headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
       body:JSON.stringify([{match_id:mid,home_goals:parseInt(r.home),away_goals:parseInt(r.away)}]),
     });
-    ctx.setMatchResults(p=>({...p,[mid]:{home:parseInt(r.home),away:parseInt(r.away)}}));
+    ctx.setMatchResults(p=>{
+      const updated={...p,[mid]:{home:parseInt(r.home),away:parseInt(r.away)}};
+      // Sla ook ranking snapshot op na elke individuele uitslag
+      saveRankingSnapshot(ctx.participants,ctx.predictions,updated,ctx.koPredictions,ctx.koMatches,ctx.bonusScores,ctx.bonusQuestions,ctx.setRankingSnapshot);
+      return updated;
+    });
     setSaving(false);setSavedMid(mid);setTimeout(()=>setSavedMid(null),2000);
   }
   async function handleSave(){

@@ -169,7 +169,7 @@ const MATCH_SCHEDULE = {
   "I-Frankrijk-Noorwegen":{date:"26 jun",time:"21:00",city:"Boston"},
   "I-Senegal-Irak":{date:"26 jun",time:"21:00",city:"Toronto"},
   "J-Argentinië-Algerije":{date:"17 jun",time:"03:00",city:"Kansas City"},
-  "J-Oostenrijk-Jordanië":{date:"16 jun",time:"06:00",city:"San Francisco"},
+  "J-Oostenrijk-Jordanië":{date:"17 jun",time:"06:00",city:"San Francisco"},
   "J-Argentinië-Oostenrijk":{date:"22 jun",time:"19:00",city:"Dallas"},
   "J-Algerije-Jordanië":{date:"23 jun",time:"05:00",city:"San Francisco"},
   "J-Argentinië-Jordanië":{date:"28 jun",time:"04:00",city:"Dallas"},
@@ -1188,7 +1188,8 @@ function HomeView({setView,ctx}){
         });
         const rankedHome=allHome.reduce((acc,p,i)=>{
           const prev=acc[i-1];
-          const rang=i===0?1:(prev&&p.total===prev.total&&p.gTotoCount===prev.gTotoCount&&p.gExactCount===prev.gExactCount&&p.bonus===prev.bonus)?prev.rang:i+1;
+          const gelijk=prev&&p.total===prev.total&&p.gTotoCount===prev.gTotoCount&&p.gExactCount===prev.gExactCount&&p.bonus===prev.bonus;
+          const rang=i===0?1:gelijk?prev.rang:i+1;
           acc.push({...p,rang});
           return acc;
         },[]);
@@ -2232,7 +2233,8 @@ function StandingsView({ctx}){
   // Ken rangnummers toe (gelijke stand = zelfde rang)
   const rows=rawRows.reduce((acc,p,i)=>{
     const prev=acc[i-1];
-    const rang=i===0?1:(prev&&p.total===prev.total&&p.gTotoCount===prev.gTotoCount&&p.gExactCount===prev.gExactCount&&p.bonus===prev.bonus)?prev.rang:i+1;
+    const gelijk=prev&&p.total===prev.total&&p.gTotoCount===prev.gTotoCount&&p.gExactCount===prev.gExactCount&&p.bonus===prev.bonus;
+    const rang=i===0?1:gelijk?prev.rang:i+1;
     acc.push({...p,rang});
     return acc;
   },[]);

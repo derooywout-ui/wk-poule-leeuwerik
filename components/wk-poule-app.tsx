@@ -1248,9 +1248,16 @@ function HomeView({setView,ctx}){
 
         // ── Ratio groep toto & exact ──
         const playedMids=Object.keys(ctx.matchResults).filter(mid=>ctx.matchResults[mid]&&ctx.matchResults[mid].home!==null);
+        // Tel per deelnemer ook hoeveel wedstrijden ze hebben ingevuld (van alle 72)
+        const allMids=Object.keys(MATCH_SCHEDULE);
         const ratios=ctx.participants.map(p=>{
           const pred=ctx.predictions[p.id]||{};
           let totoOk=0,exactOk=0,total=0;
+          // Aantal ingevulde voorspellingen (van alle 72, niet alleen gespeeld)
+          const aantalIngevuld=allMids.filter(mid=>{
+            const pp=pred[mid];
+            return pp&&pp.home!==undefined&&pp.home!==null&&pp.away!==undefined&&pp.away!==null;
+          }).length;
           playedMids.forEach(mid=>{
             const pp=pred[mid];
             const r=ctx.matchResults[mid];
@@ -1260,11 +1267,23 @@ function HomeView({setView,ctx}){
             const to=calcToto(pp.home,pp.away)===calcToto(r.home,r.away);
             if(ex){totoOk++;exactOk++;}else if(to){totoOk++;}
           });
-          return{name:`${p.first_name} ${p.last_name}`,totoOk,exactOk,total};
+          return{name:`${p.first_name} ${p.last_name}`,totoOk,exactOk,total,aantalIngevuld};
         }).filter(r=>r.total>0);
 
-        const top3toto=[...ratios].sort((a,b)=>(b.totoOk/b.total)-(a.totoOk/a.total)||b.totoOk-a.totoOk).slice(0,3);
-        const top3exact=[...ratios].sort((a,b)=>(b.exactOk/b.total)-(a.exactOk/a.total)||b.exactOk-a.exactOk).slice(0,3);
+        // Drempel: minimaal 50 van 72 wedstrijden ingevuld
+        const DREMPEL=50;
+        const ratiosGekwalificeerd=ratios.filter(r=>r.aantalIngevuld>=DREMPEL);
+
+        // Gemiddelden over alle gekwalificeerde deelnemers
+        const avgToto=ratiosGekwalificeerd.length>0
+          ? Math.round(ratiosGekwalificeerd.reduce((s,r)=>s+r.totoOk/r.total,0)/ratiosGekwalificeerd.length*100)
+          : null;
+        const avgExact=ratiosGekwalificeerd.length>0
+          ? Math.round(ratiosGekwalificeerd.reduce((s,r)=>s+r.exactOk/r.total,0)/ratiosGekwalificeerd.length*100)
+          : null;
+
+        const top3toto=[...ratiosGekwalificeerd].sort((a,b)=>(b.totoOk/b.total)-(a.totoOk/a.total)||b.totoOk-a.totoOk).slice(0,3);
+        const top3exact=[...ratiosGekwalificeerd].sort((a,b)=>(b.exactOk/b.total)-(a.exactOk/a.total)||b.exactOk-a.exactOk).slice(0,3);
 
         const hasAny=top3stijgers.length>0||top3dalers.length>0||top3toto.length>0||top3exact.length>0;
         if(!hasAny) return null;
@@ -1330,6 +1349,12 @@ function HomeView({setView,ctx}){
                         </div>
                       );
                     })}
+                    {avgToto!==null&&(
+                      <div style={{marginTop:8,paddingTop:6,borderTop:`1px dashed ${C.border}`,display:"flex",justifyContent:"space-between",fontSize:11,color:C.gray}}>
+                        <span>Gemiddelde ({ratiosGekwalificeerd.length} deeln. ≥{DREMPEL} ingevuld)</span>
+                        <span style={{fontWeight:700,color:C.gray}}>{avgToto}%</span>
+                      </div>
+                    )}
                   </div>
                   {/* Groep exact ratio */}
                   <div>
@@ -1345,6 +1370,12 @@ function HomeView({setView,ctx}){
                         </div>
                       );
                     })}
+                    {avgExact!==null&&(
+                      <div style={{marginTop:8,paddingTop:6,borderTop:`1px dashed ${C.border}`,display:"flex",justifyContent:"space-between",fontSize:11,color:C.gray}}>
+                        <span>Gemiddelde ({ratiosGekwalificeerd.length} deeln. ≥{DREMPEL} ingevuld)</span>
+                        <span style={{fontWeight:700,color:C.gray}}>{avgExact}%</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

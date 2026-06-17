@@ -2032,6 +2032,26 @@ function DeelnemerOverlay({p, ctx, onClose}){
   const bonusCorrect=Object.entries(bonusS).filter(([,v])=>v===true).length;
   const bonusAnswered=ctx.bonusQuestions.filter(q=>bonusA[q.idx]!==undefined&&bonusA[q.idx]!=="").length;
 
+  // Punten berekening per categorie
+  const ptsGroep=played.reduce((s,m)=>s+(m.pts||0),0);
+  let ptsKO=0,ptsBonusTotal=0;
+  ctx.koMatches.forEach(match=>{
+    if(!match.home_team||!match.away_team||match.home_goals===null||match.home_goals===undefined) return;
+    const kp=koPred[match.id];
+    if(!kp||kp.home===undefined||kp.home===null) return;
+    const exact=parseInt(kp.home)===parseInt(match.home_goals)&&parseInt(kp.away)===parseInt(match.away_goals);
+    const toto=calcToto(kp.home,kp.away)===calcToto(match.home_goals,match.away_goals);
+    if(exact) ptsKO+=KO_EXACT_PTS; else if(toto) ptsKO+=KO_TOTO_PTS;
+  });
+  Object.entries(bonusS).forEach(([qi,v])=>{
+    if(v){const q=ctx.bonusQuestions.find(bq=>String(bq.idx)===String(qi));ptsBonusTotal+=(q?.points??20);}
+  });
+
+  // Hoogste en laagste stand uit rankingSnapshot (matches_played >= 1)
+  const mySnaps=ctx.rankingSnapshot.filter(r=>r.participant_id===p.id&&(r.matches_played??0)>=1);
+  const hoogsteStand=mySnaps.length>0?Math.min(...mySnaps.map(r=>r.rank)):null;
+  const laagsteStand=mySnaps.length>0?Math.max(...mySnaps.map(r=>r.rank)):null;
+
   // Sluit bij klik buiten overlay
   function handleBackdrop(e){if(e.target===e.currentTarget)onClose();}
 
@@ -2058,19 +2078,53 @@ function DeelnemerOverlay({p, ctx, onClose}){
 
         <div style={{padding:"16px 20px"}}>
 
-          {/* Samenvatting */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
-            {[
-              {label:"Gespeelde wedstrijden",val:played.length,icon:"⚽"},
-              {label:"Punten groepsfase",val:totalPts,icon:"⭐"},
-              {label:"Bonusvragen",val:`${Object.keys(bonusA).length}/${ctx.bonusQuestions.length}`,icon:"🎁"},
-            ].map((item,i)=>(
-              <div key={i} style={{background:"#f4f8f5",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
-                <div style={{fontSize:20}}>{item.icon}</div>
-                <div style={{fontSize:18,fontWeight:800,color:C.green}}>{item.val}</div>
-                <div style={{fontSize:10,color:C.gray,marginTop:2}}>{item.label}</div>
-              </div>
-            ))}
+          {/* Scores en ranking */}
+          <div style={{marginBottom:20,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+            {/* Subtitel Scores */}
+            <div style={{background:"#f0faf6",padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
+              <span style={{fontSize:11,fontWeight:800,color:C.green,textTransform:"uppercase",letterSpacing:0.5}}>Scores</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:0}}>
+              {[
+                {label:"Gespeelde wedstrijden",val:played.length+ctx.koMatches.filter(m=>m.home_goals!==null&&m.home_goals!==undefined).length,icon:"⚽"},
+                {label:"Punten groepsfase",val:ptsGroep,icon:"⭐"},
+                {label:"Punten KO fase",val:ptsKO,icon:"⚡"},
+                {label:"Punten bonusvragen",val:ptsBonusTotal,icon:"🎁"},
+              ].map((item,i)=>(
+                <div key={i} style={{
+                  padding:"12px 14px",display:"flex",alignItems:"center",gap:10,
+                  borderBottom:i<2?`1px solid ${C.border}`:"none",
+                  borderRight:i%2===0?`1px solid ${C.border}`:"none",
+                }}>
+                  <span style={{fontSize:18,flexShrink:0}}>{item.icon}</span>
+                  <div>
+                    <div style={{fontSize:10,color:C.gray}}>{item.label}</div>
+                    <div style={{fontSize:17,fontWeight:800,color:C.green}}>{item.val}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Subtitel Ranking */}
+            <div style={{background:"#f0faf6",padding:"8px 14px",borderTop:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`}}>
+              <span style={{fontSize:11,fontWeight:800,color:C.green,textTransform:"uppercase",letterSpacing:0.5}}>Ranking</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:0}}>
+              {[
+                {label:"Hoogste stand ooit",val:hoogsteStand?`#${hoogsteStand}`:"-",icon:"📈",color:"#1b5e20"},
+                {label:"Laagste stand ooit",val:laagsteStand?`#${laagsteStand}`:"-",icon:"📉",color:"#b71c1c"},
+              ].map((item,i)=>(
+                <div key={i} style={{
+                  padding:"12px 14px",display:"flex",alignItems:"center",gap:10,
+                  borderRight:i===0?`1px solid ${C.border}`:"none",
+                }}>
+                  <span style={{fontSize:18,flexShrink:0}}>{item.icon}</span>
+                  <div>
+                    <div style={{fontSize:10,color:C.gray}}>{item.label}</div>
+                    <div style={{fontSize:17,fontWeight:800,color:item.color}}>{item.val}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Ratio voortgangsbalken */}

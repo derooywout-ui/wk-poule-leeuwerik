@@ -503,7 +503,7 @@ export default function App(){
       db.get("bonus_scores","select=*&limit=10000"),
       db.get("ko_matches","select=*&order=match_num"),
       db.get("ko_predictions","select=*&limit=2000"),
-      db.get("rankings_snapshot","select=*&order=created_at.desc&limit=200"),
+      db.get("rankings_snapshot","select=participant_id,rank,matches_played&order=created_at.desc&limit=5000"),
       db.get("news_items","select=*&order=created_at.desc&limit=3"),
       db.get("rss_items","select=*&order=pub_date.desc&limit=5"),
       db.get("doorstoot_landen","select=team_name"),

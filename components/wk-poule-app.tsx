@@ -503,7 +503,7 @@ export default function App(){
       db.get("bonus_scores","select=*&limit=10000"),
       db.get("ko_matches","select=*&order=match_num"),
       db.get("ko_predictions","select=*&limit=2000"),
-      db.get("rankings_snapshot","select=participant_id,rank,matches_played&order=created_at.desc&limit=5000"),
+      db.get("rankings_snapshot","select=participant_id,rank,matches_played,created_at&order=created_at.desc&limit=5000"),
       db.get("news_items","select=*&order=created_at.desc&limit=3"),
       db.get("rss_items","select=*&order=pub_date.desc&limit=5"),
       db.get("doorstoot_landen","select=team_name"),
@@ -2048,9 +2048,18 @@ function DeelnemerOverlay({p, ctx, onClose}){
   });
 
   // Hoogste en laagste stand uit rankingSnapshot (matches_played >= 1)
-  const mySnaps=ctx.rankingSnapshot.filter(r=>r.participant_id===p.id&&(r.matches_played??0)>=1);
-  const hoogsteStand=mySnaps.length>0?Math.min(...mySnaps.map(r=>r.rank)):null;
-  const laagsteStand=mySnaps.length>0?Math.max(...mySnaps.map(r=>r.rank)):null;
+  // Per matches_played batch alleen de laatste snapshot meenemen (deduplicatie)
+  const allMySnaps=ctx.rankingSnapshot.filter(r=>r.participant_id===p.id&&(r.matches_played??0)>=1);
+  const mySnapDedup=(()=>{
+    const map={};
+    allMySnaps.forEach(r=>{
+      const mp=r.matches_played??0;
+      if(!map[mp]||new Date(r.created_at)>new Date(map[mp].created_at)) map[mp]=r;
+    });
+    return Object.values(map);
+  })();
+  const hoogsteStand=mySnapDedup.length>0?Math.min(...mySnapDedup.map(r=>r.rank)):null;
+  const laagsteStand=mySnapDedup.length>0?Math.max(...mySnapDedup.map(r=>r.rank)):null;
 
   // Sluit bij klik buiten overlay
   function handleBackdrop(e){if(e.target===e.currentTarget)onClose();}

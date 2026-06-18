@@ -1028,7 +1028,18 @@ function NuLiveBlok({liveScore, ctx, setView}){
   const awayNL = EN_TO_NL[liveScore.away_team?.toLowerCase()] || liveScore.away_team;
 
   // Voorspellingsverdeling voor deze wedstrijd
-  const mid = liveScore.match_id;
+  // Zoek match_id op via teamnamen als die niet direct beschikbaar is
+  const mid = liveScore.match_id || (()=>{
+    const homeEn = (liveScore.home_team||"").toLowerCase();
+    const awayEn = (liveScore.away_team||"").toLowerCase();
+    const homeNl = EN_TO_NL[homeEn] || liveScore.home_team;
+    const awayNl = EN_TO_NL[awayEn] || liveScore.away_team;
+    return Object.keys(MATCH_SCHEDULE).find(k=>{
+      const parts = k.split("-");
+      const grp = parts[0];
+      return k === `${grp}-${homeNl}-${awayNl}` || k === `${grp}-${awayNl}-${homeNl}`;
+    }) || null;
+  })();
   const predRows = mid ? ctx.participants.map(p=>{
     const pred = ctx.predictions[p.id]?.[mid];
     const hasPred = pred&&pred.home!==undefined&&pred.home!==null;

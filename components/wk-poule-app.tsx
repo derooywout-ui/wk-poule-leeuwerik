@@ -893,8 +893,95 @@ function KOPredictTab({ctx, currentUser, saving, setSaving, saved, setSaved}){
 // ─── NU LIVE BLOK ────────────────────────────────────────────────────────────
 function NuLiveBlok({liveScore, ctx, setView}){
   const C = COLORS;
-  if(!liveScore) return null;
+  const months={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
 
+  // Meest recente gespeelde wedstrijd
+  const laatstGespeeld = React.useMemo(()=>{
+    const now=new Date();
+    let beste=null,besteDt=null;
+    Object.entries(MATCH_SCHEDULE).forEach(([mid,sch])=>{
+      const result=ctx.matchResults[mid];
+      if(!result||result.home===null||result.home===undefined) return;
+      const[day,mon]=sch.date.split(" ");const[h,m]=sch.time.split(":");
+      const dt=new Date(2026,months[mon],parseInt(day),parseInt(h),parseInt(m));
+      if(!besteDt||dt>besteDt){besteDt=dt;beste={mid,sch,result,dt};}
+    });
+    return beste;
+  },[ctx.matchResults]);
+
+  // Eerstvolgende wedstrijd
+  const volgende=React.useMemo(()=>{
+    const now=new Date();
+    let vroegste=null,vroegsteDt=null;
+    Object.entries(MATCH_SCHEDULE).forEach(([mid,sch])=>{
+      const result=ctx.matchResults[mid];
+      if(result&&result.home!==null&&result.home!==undefined) return;
+      const[day,mon]=sch.date.split(" ");const[h,m]=sch.time.split(":");
+      const dt=new Date(2026,months[mon],parseInt(day),parseInt(h),parseInt(m));
+      if(dt>now&&(!vroegsteDt||dt<vroegsteDt)){vroegsteDt=dt;vroegste={mid,sch,dt};}
+    });
+    return vroegste;
+  },[ctx.matchResults]);
+
+  const now=new Date();
+  const isLive=!!liveScore;
+  const toonLaatstGespeeld=!isLive&&!!laatstGespeeld&&(!volgende||now<volgende.dt);
+
+  if(!isLive&&!toonLaatstGespeeld) return null;
+
+  // ─── LAATST GESPEELD ──────────────────────────────────────────────────────
+  if(toonLaatstGespeeld){
+    const{mid,sch,result}=laatstGespeeld;
+    const parts=mid.split("-");const grp=parts[0];
+    const groupTeams=WK_GROUPS[grp]||[];
+    let t1=null,t2=null;
+    for(let i=0;i<groupTeams.length;i++) for(let j=i+1;j<groupTeams.length;j++){
+      if(`${grp}-${groupTeams[i].name}-${groupTeams[j].name}`===mid){t1=groupTeams[i];t2=groupTeams[j];}
+    }
+    if(!t1||!t2) return null;
+    return(
+      <div style={{borderRadius:12,overflow:"hidden",marginBottom:14,
+        boxShadow:"0 2px 12px rgba(0,0,0,0.08)",border:`1px solid ${C.border}`}}>
+        <div style={{background:C.dark,color:"#fff",padding:"10px 16px",
+          display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:16}}>⏱</span>
+          <span style={{fontWeight:800,fontSize:14,letterSpacing:0.5}}>LAATST GESPEELD</span>
+          <span style={{marginLeft:"auto",fontSize:11,opacity:0.7}}>
+            {sch.date} · {sch.time} CET · {sch.city}
+          </span>
+        </div>
+        <div style={{background:"#fff",padding:"20px 16px"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:16,marginBottom:12}}>
+            <div style={{flex:1,textAlign:"right"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end"}}>
+                <span style={{fontWeight:800,fontSize:16,color:C.dark}}>{t1.name}</span>
+                <FlagImg name={t1.name} size={28}/>
+              </div>
+            </div>
+            <div style={{background:"#f4f8f5",borderRadius:10,padding:"8px 20px",
+              display:"flex",alignItems:"center",gap:12,minWidth:100,justifyContent:"center"}}>
+              <span style={{fontSize:32,fontWeight:900,color:C.dark}}>{result.home}</span>
+              <span style={{fontSize:20,color:C.gray}}>–</span>
+              <span style={{fontSize:32,fontWeight:900,color:C.dark}}>{result.away}</span>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <FlagImg name={t2.name} size={28}/>
+                <span style={{fontWeight:800,fontSize:16,color:C.dark}}>{t2.name}</span>
+              </div>
+            </div>
+          </div>
+          {volgende&&(
+            <div style={{textAlign:"center",fontSize:12,color:C.gray}}>
+              Volgende wedstrijd: <strong style={{color:C.dark}}>{volgende.sch.date} om {volgende.sch.time} CET</strong>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── NU LIVE ──────────────────────────────────────────────────────────────
   // Vertaal Engelse teamnaam naar Nederlandse vlag via NL_TO_EN_ALIAS omgekeerd
   const EN_TO_NL = Object.fromEntries(Object.entries(NL_TO_EN_ALIAS).map(([nl,en])=>[en,nl]));
   const homeNL = EN_TO_NL[liveScore.home_team?.toLowerCase()] || liveScore.home_team;
@@ -1214,46 +1301,69 @@ function HomeView({setView,ctx}){
           </div>
         </div>
       </div>
-      {/* Nu Live blok — alleen tonen als er een wedstrijd bezig is */}
+{/* Nu Live blok — alleen tonen als er een wedstrijd bezig is */}
       <NuLiveBlok liveScore={ctx.liveScore} ctx={ctx} setView={setView}/>
 
-      {/* Prijzen */}
-      <div style={{...S.card, padding:0, overflow:"hidden", marginBottom:14}}>
-        <div style={{background:"#f0faf6", padding:"14px 20px", borderBottom:`1px solid ${COLORS.border}`}}>
-          <div style={{color:COLORS.green, fontWeight:800, fontSize:15, letterSpacing:-0.3}}>Win mooie prijzen!</div>
-          <div style={{color:COLORS.gray, fontSize:12, marginTop:2}}>Voor de nummers 1, 2 en 3 in het eindklassement · Open voor medewerkers, partners & kinderen</div>
-        </div>
-        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:0}}>
-          {/* 2e prijs links */}
-          <div style={{padding:"20px 16px", display:"flex", flexDirection:"column", alignItems:"center", textAlign:"center", background:"#fff"}}>
-            <div style={{fontSize:36, marginBottom:8}}>🥈</div>
-            <div style={{fontSize:11, fontWeight:700, color:COLORS.gray, letterSpacing:1, textTransform:"uppercase", marginBottom:6}}>2e plaats</div>
-            <div style={{fontSize:13, fontWeight:700, color:COLORS.dark, lineHeight:1.4, marginBottom:4}}>Rondleiding PSV Stadion</div>
-            <div style={{fontSize:11, color:COLORS.gray, lineHeight:1.5}}>Inclusief kleedkamers, PSV museum & afsluitende lunch voor 2 personen</div>
+      
+{/* Eerstvolgende wedstrijden */}
+      {(()=>{
+        const now=new Date();
+        // Collect all group matches with date/time
+        const allMatches=[];
+        Object.entries(WK_GROUPS).forEach(([grp,teams])=>{
+          teams.forEach((t1,i)=>teams.slice(i+1).forEach((t2,j)=>{
+            const mid=getMatchId(grp,t1.name,t2.name);
+            const sch=MATCH_SCHEDULE[mid];
+            if(!sch) return;
+            const months={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
+            const [day,mon]=sch.date.split(" ");
+            const [h,m]=sch.time.split(":");
+            const dt=new Date(2026,months[mon],parseInt(day),parseInt(h),parseInt(m));
+            const result=ctx.matchResults[mid];
+            const hasResult=result&&result.home!==undefined&&result.home!==null;
+            const isLive=!hasResult&&dt<=now&&now<=new Date(dt.getTime()+115*60000);
+            allMatches.push({mid,grp,t1,t2,sch,dt,hasResult,isLive});
+          }));
+        });
+        // Show live + upcoming, sorted by time, max 3
+        const upcoming=allMatches
+          .filter(m=>!m.hasResult||m.isLive)
+          .sort((a,b)=>a.dt-b.dt)
+          .slice(0,3);
+        if(upcoming.length===0) return null;
+        return(
+          <div style={S.card}>
+            <div style={{...S.row,marginBottom:12,justifyContent:"space-between"}}>
+              <h2 style={{...S.h2,margin:0}}>Eerstvolgende wedstrijden</h2>
+              <button style={{...S.btn("green"),fontSize:12,padding:"6px 12px"}} onClick={()=>setView("dagprogramma")}>Volledig programma →</button>
+            </div>
+            {upcoming.map(({mid,grp,t1,t2,sch,isLive})=>(
+              <div key={mid} style={{padding:"10px 0",borderBottom:`1px solid ${COLORS.border}`}}>
+                <div style={{fontSize:11,color:COLORS.gray,marginBottom:6,display:"flex",gap:10,alignItems:"center"}}>
+                  {isLive&&<span style={{background:"#e53935",color:"#fff",fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,letterSpacing:0.5}}>● NU BEZIG</span>}
+                  <span>📅 {sch.date}</span><span>🕐 {sch.time} CET</span><span>📍 {sch.city}</span>
+                  <span style={S.tag("")}>Groep {grp}</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flex:1,justifyContent:"flex-end"}}>
+                    <span style={{fontWeight:700,fontSize:14}}>{t1.name}</span>
+                    <FlagImg name={t1.name} size={20}/>
+                  </div>
+                  <span style={{fontWeight:800,color:COLORS.gray,fontSize:14,width:30,textAlign:"center"}}>vs</span>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flex:1}}>
+                    <FlagImg name={t2.name} size={20}/>
+                    <span style={{fontWeight:700,fontSize:14}}>{t2.name}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-          {/* 1e prijs midden — uitgelicht */}
-          <div style={{padding:"24px 16px", display:"flex", flexDirection:"column", alignItems:"center", textAlign:"center", background:"#e8f5ee", position:"relative", borderRight:`1px solid ${COLORS.border}`, borderLeft:`1px solid ${COLORS.border}`}}>
-            <div style={{position:"absolute", top:0, left:0, right:0, height:3, background:COLORS.yellow}}/>
-            <div style={{fontSize:44, marginBottom:8}}>🥇</div>
-            <div style={{fontSize:11, fontWeight:800, color:COLORS.green, letterSpacing:1, textTransform:"uppercase", marginBottom:6}}>1e plaats</div>
-            <div style={{fontSize:14, fontWeight:800, color:COLORS.dark, lineHeight:1.4, marginBottom:4}}>4 Kaartjes Efteling</div>
-            <div style={{fontSize:11, color:COLORS.gray, lineHeight:1.5}}>Een onvergetelijke dag uit voor het hele gezin!</div>
-          </div>
-          {/* 3e prijs rechts */}
-          <div style={{padding:"20px 16px", display:"flex", flexDirection:"column", alignItems:"center", textAlign:"center", background:"#fff"}}>
-            <div style={{fontSize:36, marginBottom:8}}>🥉</div>
-            <div style={{fontSize:11, fontWeight:700, color:COLORS.gray, letterSpacing:1, textTransform:"uppercase", marginBottom:6}}>3e plaats</div>
-            <div style={{fontSize:13, fontWeight:700, color:COLORS.dark, lineHeight:1.4, marginBottom:4}}>Dinerbon Mispelhoef</div>
-            <div style={{fontSize:11, color:COLORS.gray, lineHeight:1.5}}>Ter waarde van €75 — een heerlijk diner voor 2</div>
-          </div>
-        </div>
-        <div style={{padding:"10px 16px", background:"#f4f8f5", borderTop:`1px solid ${COLORS.border}`, textAlign:"center"}}>
-          <span style={{fontSize:11, color:COLORS.gray}}>🎟️ Deelname staat open voor alle <strong style={{color:COLORS.green}}>Leeuwerik medewerkers</strong>, hun <strong style={{color:COLORS.green}}>partners</strong> en <strong style={{color:COLORS.green}}>kinderen</strong></span>
-        </div>
-      </div>
+        );
+      })()}
 
 
-      {/* Top 5 klassement */}
+      
+{/* Top 5 klassement */}
       {(()=>{
         // Hergebruik dezelfde score-logica als StandingsView (incl. juiste puntensysteem)
         function calcScoreHome(uid){
@@ -1328,7 +1438,8 @@ function HomeView({setView,ctx}){
       })()}
 
 
-      {/* Opvallend blok: stijgers/dalers + ratio's */}
+      
+{/* Opvallend blok: stijgers/dalers + ratio's */}
       {(()=>{
         const C=COLORS;
 
@@ -1496,64 +1607,8 @@ function HomeView({setView,ctx}){
         );
       })()}
 
-      {/* Eerstvolgende wedstrijden */}
-      {(()=>{
-        const now=new Date();
-        // Collect all group matches with date/time
-        const allMatches=[];
-        Object.entries(WK_GROUPS).forEach(([grp,teams])=>{
-          teams.forEach((t1,i)=>teams.slice(i+1).forEach((t2,j)=>{
-            const mid=getMatchId(grp,t1.name,t2.name);
-            const sch=MATCH_SCHEDULE[mid];
-            if(!sch) return;
-            const months={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
-            const [day,mon]=sch.date.split(" ");
-            const [h,m]=sch.time.split(":");
-            const dt=new Date(2026,months[mon],parseInt(day),parseInt(h),parseInt(m));
-            const result=ctx.matchResults[mid];
-            const hasResult=result&&result.home!==undefined&&result.home!==null;
-            const isLive=!hasResult&&dt<=now&&now<=new Date(dt.getTime()+115*60000);
-            allMatches.push({mid,grp,t1,t2,sch,dt,hasResult,isLive});
-          }));
-        });
-        // Show live + upcoming, sorted by time, max 3
-        const upcoming=allMatches
-          .filter(m=>!m.hasResult||m.isLive)
-          .sort((a,b)=>a.dt-b.dt)
-          .slice(0,3);
-        if(upcoming.length===0) return null;
-        return(
-          <div style={S.card}>
-            <div style={{...S.row,marginBottom:12,justifyContent:"space-between"}}>
-              <h2 style={{...S.h2,margin:0}}>Eerstvolgende wedstrijden</h2>
-              <button style={{...S.btn("green"),fontSize:12,padding:"6px 12px"}} onClick={()=>setView("dagprogramma")}>Volledig programma →</button>
-            </div>
-            {upcoming.map(({mid,grp,t1,t2,sch,isLive})=>(
-              <div key={mid} style={{padding:"10px 0",borderBottom:`1px solid ${COLORS.border}`}}>
-                <div style={{fontSize:11,color:COLORS.gray,marginBottom:6,display:"flex",gap:10,alignItems:"center"}}>
-                  {isLive&&<span style={{background:"#e53935",color:"#fff",fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,letterSpacing:0.5}}>● NU BEZIG</span>}
-                  <span>📅 {sch.date}</span><span>🕐 {sch.time} CET</span><span>📍 {sch.city}</span>
-                  <span style={S.tag("")}>Groep {grp}</span>
-                </div>
-                <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6,flex:1,justifyContent:"flex-end"}}>
-                    <span style={{fontWeight:700,fontSize:14}}>{t1.name}</span>
-                    <FlagImg name={t1.name} size={20}/>
-                  </div>
-                  <span style={{fontWeight:800,color:COLORS.gray,fontSize:14,width:30,textAlign:"center"}}>vs</span>
-                  <div style={{display:"flex",alignItems:"center",gap:6,flex:1}}>
-                    <FlagImg name={t2.name} size={20}/>
-                    <span style={{fontWeight:700,fontSize:14}}>{t2.name}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        );
-      })()}
-
-
-      {/* Nieuwsfeed */}
+      
+{/* Nieuwsfeed */}
       {ctx.newsItems&&ctx.newsItems.length>0&&(
         <div style={S.card}>
           <h2 style={{...S.h2,marginBottom:14}}>📢 Mededelingen van de beheerder</h2>
@@ -1576,7 +1631,8 @@ function HomeView({setView,ctx}){
       )}
 
 
-      {/* VI WK Nieuws */}
+      
+{/* VI WK Nieuws */}
       {ctx.rssItems&&ctx.rssItems.length>0&&(
         <div style={S.card}>
           <div style={{...S.row,marginBottom:14,justifyContent:"space-between",alignItems:"center"}}>
@@ -1609,6 +1665,44 @@ function HomeView({setView,ctx}){
         </div>
       )}
 
+
+{/* Prijzen */}
+      <div style={{...S.card, padding:0, overflow:"hidden", marginBottom:14}}>
+        <div style={{background:"#f0faf6", padding:"14px 20px", borderBottom:`1px solid ${COLORS.border}`}}>
+          <div style={{color:COLORS.green, fontWeight:800, fontSize:15, letterSpacing:-0.3}}>Win mooie prijzen!</div>
+          <div style={{color:COLORS.gray, fontSize:12, marginTop:2}}>Voor de nummers 1, 2 en 3 in het eindklassement · Open voor medewerkers, partners & kinderen</div>
+        </div>
+        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:0}}>
+          {/* 2e prijs links */}
+          <div style={{padding:"20px 16px", display:"flex", flexDirection:"column", alignItems:"center", textAlign:"center", background:"#fff"}}>
+            <div style={{fontSize:36, marginBottom:8}}>🥈</div>
+            <div style={{fontSize:11, fontWeight:700, color:COLORS.gray, letterSpacing:1, textTransform:"uppercase", marginBottom:6}}>2e plaats</div>
+            <div style={{fontSize:13, fontWeight:700, color:COLORS.dark, lineHeight:1.4, marginBottom:4}}>Rondleiding PSV Stadion</div>
+            <div style={{fontSize:11, color:COLORS.gray, lineHeight:1.5}}>Inclusief kleedkamers, PSV museum & afsluitende lunch voor 2 personen</div>
+          </div>
+          {/* 1e prijs midden — uitgelicht */}
+          <div style={{padding:"24px 16px", display:"flex", flexDirection:"column", alignItems:"center", textAlign:"center", background:"#e8f5ee", position:"relative", borderRight:`1px solid ${COLORS.border}`, borderLeft:`1px solid ${COLORS.border}`}}>
+            <div style={{position:"absolute", top:0, left:0, right:0, height:3, background:COLORS.yellow}}/>
+            <div style={{fontSize:44, marginBottom:8}}>🥇</div>
+            <div style={{fontSize:11, fontWeight:800, color:COLORS.green, letterSpacing:1, textTransform:"uppercase", marginBottom:6}}>1e plaats</div>
+            <div style={{fontSize:14, fontWeight:800, color:COLORS.dark, lineHeight:1.4, marginBottom:4}}>4 Kaartjes Efteling</div>
+            <div style={{fontSize:11, color:COLORS.gray, lineHeight:1.5}}>Een onvergetelijke dag uit voor het hele gezin!</div>
+          </div>
+          {/* 3e prijs rechts */}
+          <div style={{padding:"20px 16px", display:"flex", flexDirection:"column", alignItems:"center", textAlign:"center", background:"#fff"}}>
+            <div style={{fontSize:36, marginBottom:8}}>🥉</div>
+            <div style={{fontSize:11, fontWeight:700, color:COLORS.gray, letterSpacing:1, textTransform:"uppercase", marginBottom:6}}>3e plaats</div>
+            <div style={{fontSize:13, fontWeight:700, color:COLORS.dark, lineHeight:1.4, marginBottom:4}}>Dinerbon Mispelhoef</div>
+            <div style={{fontSize:11, color:COLORS.gray, lineHeight:1.5}}>Ter waarde van €75 — een heerlijk diner voor 2</div>
+          </div>
+        </div>
+        <div style={{padding:"10px 16px", background:"#f4f8f5", borderTop:`1px solid ${COLORS.border}`, textAlign:"center"}}>
+          <span style={{fontSize:11, color:COLORS.gray}}>🎟️ Deelname staat open voor alle <strong style={{color:COLORS.green}}>Leeuwerik medewerkers</strong>, hun <strong style={{color:COLORS.green}}>partners</strong> en <strong style={{color:COLORS.green}}>kinderen</strong></span>
+        </div>
+      </div>
+
+
+      
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         <div style={S.card}>
           <h2 style={S.h2}>Puntentelling</h2>

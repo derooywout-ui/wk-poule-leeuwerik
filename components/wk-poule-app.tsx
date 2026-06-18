@@ -2596,11 +2596,25 @@ function StandingsView({ctx}){
     {id:"r2ko", label:"Halve"},
     {id:"r1ko", label:"Finale"},
   ];
-  const [actieveRondes, setActieveRondes] = React.useState(
-    new Set(["r1","r2","r3","r16","r8","r4","r2ko","r1ko"])
+  // Initieel alleen de rondes aan die al gespeeld zijn
+  const [actieveRondes, setActieveRondes] = React.useState(()=>{
+    const gespeeld = new Set();
+    Object.keys(ctx.matchResults).forEach(mid=>{
+      const ronde = SPEELRONDE_MAP[mid];
+      if(ronde) gespeeld.add(`r${ronde}`);
+    });
+    ctx.koMatches.filter(m=>m.home_goals!==null&&m.home_goals!==undefined).forEach(m=>{
+      const kid = KO_ROUND_MAP[m.round_id];
+      if(kid) gespeeld.add(kid);
+    });
+    return gespeeld;
+  });
+  const [toonDoorstoot, setToonDoorstoot] = React.useState(
+    ()=>ctx.doorstootLanden&&ctx.doorstootLanden.length>0
   );
-  const [toonDoorstoot, setToonDoorstoot] = React.useState(true);
-  const [toonBonus, setToonBonus] = React.useState(true);
+  const [toonBonus, setToonBonus] = React.useState(
+    ()=>ctx.bonusQuestions.some(q=>Object.values(ctx.bonusScores).some(s=>s[q.idx]!==undefined))
+  );
 
   function toggleRonde(id){
     setActieveRondes(prev=>{
@@ -2609,21 +2623,31 @@ function StandingsView({ctx}){
       return next;
     });
   }
-  function allesAan(){
-    setActieveRondes(new Set(["r1","r2","r3","r16","r8","r4","r2ko","r1ko"]));
-    setToonDoorstoot(true);
-    setToonBonus(true);
-  }
-  const isAllesAan = actieveRondes.size===8 && toonDoorstoot && toonBonus;
+  // Alle gespeelde rondes
+  const gespeeldeRondeIds = React.useMemo(()=>{
+    const gespeeld = new Set();
+    Object.keys(ctx.matchResults).forEach(mid=>{
+      const ronde = SPEELRONDE_MAP[mid];
+      if(ronde) gespeeld.add(`r${ronde}`);
+    });
+    ctx.koMatches.filter(m=>m.home_goals!==null&&m.home_goals!==undefined).forEach(m=>{
+      const kid = KO_ROUND_MAP[m.round_id];
+      if(kid) gespeeld.add(kid);
+    });
+    return gespeeld;
+  }, [ctx.matchResults, ctx.koMatches]);
 
-  // Bepaal welke KO rounds gespeeld zijn
-  const gespeeldeKORounds = new Set(
-    ctx.koMatches
-      .filter(m=>m.home_goals!==null&&m.home_goals!==undefined)
-      .map(m=>m.round_id)
-  );
-  // Map KO round_id naar onze filter id
-  const KO_ROUND_MAP = {"r16":"r16","r8":"r8","r4":"r4","r2":"r2ko","r3":"r1ko","r1":"r1ko"};
+  function allesAan(){
+    setActieveRondes(new Set(gespeeldeRondeIds));
+    setToonDoorstoot(ctx.doorstootLanden&&ctx.doorstootLanden.length>0);
+    setToonBonus(ctx.bonusQuestions.some(q=>Object.values(ctx.bonusScores).some(s=>s[q.idx]!==undefined)));
+  }
+  const heeftDoorstootData = ctx.doorstootLanden&&ctx.doorstootLanden.length>0;
+  const heeftBonusData = ctx.bonusQuestions.some(q=>Object.values(ctx.bonusScores).some(s=>s[q.idx]!==undefined));
+  const isAllesAan = [...gespeeldeRondeIds].every(r=>actieveRondes.has(r)) &&
+    (!heeftDoorstootData||toonDoorstoot) && (!heeftBonusData||toonBonus);
+
+
 
   function calcScore(uid){
     // gToto   = 3pts per wedstrijd met juiste toto (incl. exacte uitslagen)
@@ -2745,12 +2769,7 @@ function StandingsView({ctx}){
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
           <span style={{fontSize:11,fontWeight:700,color:COLORS.gray,textTransform:"uppercase",letterSpacing:0.5,flexShrink:0}}>Speelrondes:</span>
           {ALLE_RONDES.map(r=>{
-            // Bepaal of ronde gespeeld is
-            const heeftData = r.id.startsWith("r") && !["r16","r8","r4","r2ko","r1ko"].includes(r.id)
-              ? Object.keys(ctx.matchResults).some(mid=>SPEELRONDE_MAP[mid]===parseInt(r.id.replace("r","")))
-              : gespeeldeKORounds.has(
-                  Object.entries(KO_ROUND_MAP).find(([,v])=>v===r.id)?.[0]||""
-                );
+            const heeftData = gespeeldeRondeIds.has(r.id);
             const aan = actieveRondes.has(r.id);
             return(
               <button key={r.id} onClick={()=>heeftData&&toggleRonde(r.id)}
@@ -2769,9 +2788,9 @@ function StandingsView({ctx}){
           <span style={{fontSize:11,fontWeight:700,color:COLORS.gray,textTransform:"uppercase",letterSpacing:0.5,flexShrink:0}}>Extra:</span>
           {[
             {id:"doorstoot",label:"🏆 Doorstoot",aan:toonDoorstoot,toggle:()=>setToonDoorstoot(v=>!v),
-             heeftData:ctx.doorstootLanden&&ctx.doorstootLanden.length>0},
+             heeftData:heeftDoorstootData},
             {id:"bonus",label:"🎁 Bonus",aan:toonBonus,toggle:()=>setToonBonus(v=>!v),
-             heeftData:ctx.bonusQuestions.some(q=>Object.values(ctx.bonusScores).some(s=>s[q.idx]!==undefined))},
+             heeftData:heeftBonusData},
           ].map(item=>(
             <button key={item.id} onClick={()=>item.heeftData&&item.toggle()}
               style={{

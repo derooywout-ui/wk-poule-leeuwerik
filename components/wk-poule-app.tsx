@@ -927,7 +927,13 @@ function NuLiveBlok({liveScore, ctx, setView}){
 
   const now=new Date();
   const isLive=!!liveScore;
-  const toonLaatstGespeeld=!isLive&&!!laatstGespeeld&&(!volgende||now<volgende.dt);
+  // Toon "Laatst gespeeld" als:
+  // - geen live data én
+  // - er een uitslag is én
+  // - volgende wedstrijd nog niet begonnen ÓÓOR net begonnen maar nog geen live data (< 10 min geleden)
+  const volgendeBegonnen = volgende && now >= volgende.dt;
+  const volgendeTe10Min = volgende && now < new Date(volgende.dt.getTime() + 10*60000);
+  const toonLaatstGespeeld=!isLive&&!!laatstGespeeld&&(!volgendeBegonnen||(volgendeBegonnen&&volgendeTe10Min));
 
   if(!isLive&&!toonLaatstGespeeld) return null;
 
@@ -975,7 +981,10 @@ function NuLiveBlok({liveScore, ctx, setView}){
           </div>
           {volgende&&(
             <div style={{textAlign:"center",fontSize:12,color:C.gray}}>
-              Volgende wedstrijd: <strong style={{color:C.dark}}>{volgende.sch.date} om {volgende.sch.time} CET</strong>
+              {volgendeBegonnen
+                ? <span style={{color:"#e53935",fontWeight:700}}>● Nu bezig: {volgende.sch.date} om {volgende.sch.time} CET</span>
+                : <span>Volgende wedstrijd: <strong style={{color:C.dark}}>{volgende.sch.date} om {volgende.sch.time} CET</strong></span>
+              }
             </div>
           )}
           {/* Voorspellingsverdeling */}

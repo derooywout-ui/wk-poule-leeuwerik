@@ -976,6 +976,41 @@ function NuLiveBlok({liveScore, ctx, setView}){
               Volgende wedstrijd: <strong style={{color:C.dark}}>{volgende.sch.date} om {volgende.sch.time} CET</strong>
             </div>
           )}
+          {/* Voorspellingsverdeling */}
+          {(()=>{
+            const predRows=ctx.participants.map(p=>{
+              const pred=ctx.predictions[p.id]?.[mid];
+              const hasPred=pred&&pred.home!==undefined&&pred.home!==null;
+              return{...p,pred,hasPred};
+            }).filter(p=>p.hasPred);
+            const totaalPred=predRows.length;
+            const freqMap={};
+            predRows.forEach(p=>{
+              const key=`${p.pred.home}-${p.pred.away}`;
+              freqMap[key]=(freqMap[key]||0)+1;
+            });
+            const topPred=Object.entries(freqMap).sort((a,b)=>b[1]-a[1])[0];
+            if(totaalPred===0) return null;
+            return(
+              <div style={{marginTop:12,background:C.light,borderRadius:8,padding:"10px 14px",
+                display:"flex",alignItems:"center",justifyContent:"space-between",
+                flexWrap:"wrap",gap:8,fontSize:12}}>
+                <span style={{color:C.gray}}>
+                  ⚽ <strong style={{color:C.dark}}>{totaalPred}</strong> voorspellingen
+                </span>
+                {topPred&&(
+                  <span style={{color:C.gray}}>
+                    Meest voorspeld: <strong style={{color:C.green}}>{topPred[0]}</strong>
+                    <span style={{color:C.gray}}> ({topPred[1]}×)</span>
+                  </span>
+                )}
+                <button onClick={()=>setView("dagprogramma")}
+                  style={{...S.btn("green"),fontSize:11,padding:"4px 10px"}}>
+                  Alle voorspellingen →
+                </button>
+              </div>
+            );
+          })()}
         </div>
       </div>
     );

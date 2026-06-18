@@ -1123,8 +1123,8 @@ function NuLiveBlok({liveScore, ctx, setView}){
           </div>
         </div>
 
-        {/* Voorspellingen info */}
-        {totaalPred>0&&(
+        {/* Voorspellingen info — altijd tonen na deadline */}
+        {deadlinePassed()&&(
           <div style={{
             background:C.light, borderRadius:8, padding:"10px 14px",
             display:"flex", alignItems:"center", justifyContent:"space-between",
@@ -1141,9 +1141,10 @@ function NuLiveBlok({liveScore, ctx, setView}){
             )}
             <button
               onClick={()=>{
-                if(liveScore.match_id){
-                  const sch=MATCH_SCHEDULE[liveScore.match_id];
-                  ctx.setNavTarget({matchId:liveScore.match_id,date:sch?.date});
+                const targetMid=mid||liveScore.match_id;
+                if(targetMid){
+                  const sch=MATCH_SCHEDULE[targetMid];
+                  ctx.setNavTarget({matchId:targetMid,date:sch?.date});
                 }
                 setView("dagprogramma");
               }}

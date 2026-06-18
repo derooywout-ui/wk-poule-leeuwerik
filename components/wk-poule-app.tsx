@@ -476,6 +476,7 @@ function LouisChatbot(){
 
 export default function App(){
   const [view,setView]=useState("home");
+  const [navTarget,setNavTarget]=useState(null); // {matchId, date} voor directe navigatie
   const [currentUser,setCurrentUser]=useState(null);
   const [isAdmin,setIsAdmin]=useState(false);
   const [participants,setParticipants]=useState([]);
@@ -619,6 +620,7 @@ export default function App(){
     rssItems,setRssItems,
     doorstootLanden,setDoorstootLanden,
     liveScore,setLiveScore,
+    navTarget,setNavTarget,
   };
 
   if(loading) return <div style={{...S.app,display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:12}}><div style={{fontSize:32}}>⚽</div><div style={{fontSize:15,color:COLORS.gray}}>Laden…</div></div>;
@@ -1004,7 +1006,10 @@ function NuLiveBlok({liveScore, ctx, setView}){
                     <span style={{color:C.gray}}> ({topPred[1]}×)</span>
                   </span>
                 )}
-                <button onClick={()=>setView("dagprogramma")}
+                <button onClick={()=>{
+                    ctx.setNavTarget({matchId:mid,date:sch.date});
+                    setView("dagprogramma");
+                  }}
                   style={{...S.btn("green"),fontSize:11,padding:"4px 10px"}}>
                   Alle voorspellingen →
                 </button>
@@ -1124,7 +1129,13 @@ function NuLiveBlok({liveScore, ctx, setView}){
               </span>
             )}
             <button
-              onClick={()=>setView("dagprogramma")}
+              onClick={()=>{
+                if(liveScore.match_id){
+                  const sch=MATCH_SCHEDULE[liveScore.match_id];
+                  ctx.setNavTarget({matchId:liveScore.match_id,date:sch?.date});
+                }
+                setView("dagprogramma");
+              }}
               style={{...S.btn("green"), fontSize:11, padding:"4px 10px"}}
             >
               Alle voorspellingen →
@@ -2967,8 +2978,8 @@ function weekdayNL(d){return["zondag","maandag","dinsdag","woensdag","donderdag"
 
 
 // ─── PREDICTIE UITKLAP (deelnemerslijst + staafdiagram per wedstrijd) ──────────
-function PredictieUitklap({predRows,t1,t2,hasResult,mid,isKO=false,KO_EXACT_PTS=10,KO_TOTO_PTS=5}){
-  const [open,setOpen]=React.useState(false);
+function PredictieUitklap({predRows,t1,t2,hasResult,mid,isKO=false,KO_EXACT_PTS=10,KO_TOTO_PTS=5,defaultOpen=false}){
+  const [open,setOpen]=React.useState(defaultOpen);
   const chartId=`chart_${mid.replace(/[^a-zA-Z0-9]/g,"_")}`;
 
   // Bouw frequentietabel van uitslag-combinaties
@@ -3112,11 +3123,21 @@ function DagProgrammaView({ctx}){
 
   const allDates=Object.keys(allDatesMap).sort((a,b)=>parseWKDate(a)-parseWKDate(b));
   const [selectedDate,setSelectedDate]=useState(()=>{
+    // Gebruik navTarget datum als die er is
+    if(ctx.navTarget?.date) return ctx.navTarget.date;
     const now=new Date();
     const months=["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"];
     const todayKey=`${now.getDate()} ${months[now.getMonth()]}`;
     return allDates.includes(todayKey)?todayKey:(allDates[0]||"");
   });
+  // Auto-open het juiste match uitklap via navTarget
+  const [autoOpenMid,setAutoOpenMid]=useState(ctx.navTarget?.matchId||null);
+  // Reset navTarget na gebruik
+  React.useEffect(()=>{
+    if(ctx.navTarget){
+      ctx.setNavTarget(null);
+    }
+  },[]);
   const dayMatches=(allDatesMap[selectedDate]||[]).slice().sort((a,b)=>{
     const[ah,am]=a.time.split(":").map(Number);const[bh,bm]=b.time.split(":").map(Number);return(ah*60+am)-(bh*60+bm);
   });
@@ -3243,7 +3264,7 @@ function DagProgrammaView({ctx}){
                 {!dp?(
                   <div style={{...S.alert("warn"),fontSize:12}}>🔒 Voorspellingen zichtbaar na de deadline ({fmtDeadline()}).</div>
                 ):(
-                  <PredictieUitklap predRows={predRows} t1={t1} t2={t2} hasResult={hasResult} mid={mid}/>
+                  <PredictieUitklap predRows={predRows} t1={t1} t2={t2} hasResult={hasResult} mid={mid} defaultOpen={autoOpenMid===mid}/>
                 )}
               </div>
             );

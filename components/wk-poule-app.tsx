@@ -490,11 +490,12 @@ export default function App(){
   const [newsItems,setNewsItems]=useState([]);
   const [rssItems,setRssItems]=useState([]);
   const [doorstootLanden,setDoorstootLanden]=useState([]);
+  const [liveScore,setLiveScore]=useState(null);
   const [loading,setLoading]=useState(true);
 
   const loadAll=useCallback(async()=>{
     setLoading(true);
-    const [parts,results,preds,bq,ba,bs,kom,kop,snap,news,rss,doorstoot]=await Promise.all([
+    const [parts,results,preds,bq,ba,bs,kom,kop,snap,news,rss,doorstoot,live]=await Promise.all([
       db.get("participants","select=*&order=created_at"),
       db.get("match_results","select=*"),
       db.get("predictions","select=*&limit=10000"),
@@ -507,6 +508,7 @@ export default function App(){
       db.get("news_items","select=*&order=created_at.desc&limit=3"),
       db.get("rss_items","select=*&order=pub_date.desc&limit=5"),
       db.get("doorstoot_landen","select=team_name"),
+      db.get("live_score","select=*&limit=1"),
     ]);
     if(parts) setParticipants(parts);
     if(results){
@@ -544,6 +546,7 @@ export default function App(){
     if(news) setNewsItems(news);
     if(rss) setRssItems(rss);
     if(doorstoot) setDoorstootLanden(doorstoot.map(r=>r.team_name));
+    setLiveScore(live&&live.length>0?live[0]:null);
     if(kop){
       const k={};
       kop.forEach(r=>{
@@ -574,6 +577,27 @@ export default function App(){
     return()=>clearInterval(interval);
   },[loadAll]);
 
+  // Live score polling elke 30 seconden (alleen als wedstrijd bezig is)
+  useEffect(()=>{
+    async function pollLiveScore(){
+      const res=await db.get("live_score","select=*&limit=1");
+      setLiveScore(res&&res.length>0?res[0]:null);
+    }
+    // Check of er nu een wedstrijd bezig kan zijn
+    const now=new Date();
+    const anyLive=Object.values(MATCH_SCHEDULE).some(sch=>{
+      const months={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
+      const[day,mon]=sch.date.split(" ");
+      const[h,m]=sch.time.split(":");
+      const start=new Date(2026,months[mon],parseInt(day),parseInt(h),parseInt(m));
+      const end=new Date(start.getTime()+130*60000); // wedstrijd + 10 min marge
+      return now>=start&&now<=end;
+    });
+    if(!anyLive) return;
+    const interval=setInterval(pollLiveScore,30000);
+    return()=>clearInterval(interval);
+  },[]);
+
   useEffect(()=>{
     // Set emoji favicon
     const link = document.querySelector("link[rel~='icon']") || document.createElement("link");
@@ -594,6 +618,7 @@ export default function App(){
     newsItems,setNewsItems,
     rssItems,setRssItems,
     doorstootLanden,setDoorstootLanden,
+    liveScore,setLiveScore,
   };
 
   if(loading) return <div style={{...S.app,display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:12}}><div style={{fontSize:32}}>⚽</div><div style={{fontSize:15,color:COLORS.gray}}>Laden…</div></div>;
@@ -864,6 +889,131 @@ function KOPredictTab({ctx, currentUser, saving, setSaving, saved, setSaved}){
 }
 
 
+
+// ─── NU LIVE BLOK ────────────────────────────────────────────────────────────
+function NuLiveBlok({liveScore, ctx, setView}){
+  const C = COLORS;
+  if(!liveScore) return null;
+
+  // Vertaal Engelse teamnaam naar Nederlandse vlag via NL_TO_EN_ALIAS omgekeerd
+  const EN_TO_NL = Object.fromEntries(Object.entries(NL_TO_EN_ALIAS).map(([nl,en])=>[en,nl]));
+  const homeNL = EN_TO_NL[liveScore.home_team?.toLowerCase()] || liveScore.home_team;
+  const awayNL = EN_TO_NL[liveScore.away_team?.toLowerCase()] || liveScore.away_team;
+
+  // Voorspellingsverdeling voor deze wedstrijd
+  const mid = liveScore.match_id;
+  const predRows = mid ? ctx.participants.map(p=>{
+    const pred = ctx.predictions[p.id]?.[mid];
+    const hasPred = pred&&pred.home!==undefined&&pred.home!==null;
+    return{...p, pred, hasPred};
+  }).filter(p=>p.hasPred) : [];
+  const totaalPred = predRows.length;
+
+  // Meest voorspelde uitslag
+  const freqMap = {};
+  predRows.forEach(p=>{
+    const key = `${p.pred.home}-${p.pred.away}`;
+    freqMap[key] = (freqMap[key]||0)+1;
+  });
+  const topPred = Object.entries(freqMap).sort((a,b)=>b[1]-a[1])[0];
+
+  const isHalftime = liveScore.status === "PAUSED";
+
+  return(
+    <div style={{
+      borderRadius:12, overflow:"hidden", marginBottom:14,
+      boxShadow:"0 4px 20px rgba(0,99,58,0.25)",
+      border:`2px solid ${C.green}`,
+    }}>
+      {/* Header met pulserende indicator */}
+      <div style={{
+        background:C.green, color:"#fff",
+        padding:"10px 16px",
+        display:"flex", alignItems:"center", gap:10,
+      }}>
+        <span style={{
+          display:"inline-block", width:10, height:10, borderRadius:"50%",
+          background:"#ff4444",
+          boxShadow:"0 0 0 0 rgba(255,68,68,0.7)",
+          animation:"pulse 1.5s infinite",
+        }}/>
+        <style>{`@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,68,68,0.7)}70%{box-shadow:0 0 0 8px rgba(255,68,68,0)}100%{box-shadow:0 0 0 0 rgba(255,68,68,0)}}`}</style>
+        <span style={{fontWeight:800, fontSize:14, letterSpacing:0.5}}>
+          {isHalftime ? "⏸ RUST" : "● NU LIVE"}
+        </span>
+        {liveScore.minute&&!isHalftime&&(
+          <span style={{fontSize:12, opacity:0.85}}>{liveScore.minute}'</span>
+        )}
+        <span style={{marginLeft:"auto", fontSize:11, opacity:0.75}}>
+          Bijgewerkt elke 30s
+        </span>
+      </div>
+
+      {/* Score */}
+      <div style={{background:"#fff", padding:"20px 16px"}}>
+        <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:16, marginBottom:16}}>
+          {/* Thuisteam */}
+          <div style={{flex:1, textAlign:"right"}}>
+            <div style={{display:"flex", alignItems:"center", gap:8, justifyContent:"flex-end"}}>
+              <span style={{fontWeight:800, fontSize:16, color:C.dark}}>{homeNL}</span>
+              <FlagImg name={homeNL} size={28}/>
+            </div>
+          </div>
+
+          {/* Score display */}
+          <div style={{
+            background:C.green, color:"#fff",
+            borderRadius:10, padding:"8px 20px",
+            display:"flex", alignItems:"center", gap:12,
+            minWidth:100, justifyContent:"center",
+          }}>
+            <span style={{fontSize:32, fontWeight:900, fontVariantNumeric:"tabular-nums"}}>
+              {liveScore.home_goals}
+            </span>
+            <span style={{fontSize:20, opacity:0.6}}>–</span>
+            <span style={{fontSize:32, fontWeight:900, fontVariantNumeric:"tabular-nums"}}>
+              {liveScore.away_goals}
+            </span>
+          </div>
+
+          {/* Uitteam */}
+          <div style={{flex:1}}>
+            <div style={{display:"flex", alignItems:"center", gap:8}}>
+              <FlagImg name={awayNL} size={28}/>
+              <span style={{fontWeight:800, fontSize:16, color:C.dark}}>{awayNL}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Voorspellingen info */}
+        {totaalPred>0&&(
+          <div style={{
+            background:C.light, borderRadius:8, padding:"10px 14px",
+            display:"flex", alignItems:"center", justifyContent:"space-between",
+            flexWrap:"wrap", gap:8, fontSize:12,
+          }}>
+            <span style={{color:C.gray}}>
+              ⚽ <strong style={{color:C.dark}}>{totaalPred}</strong> voorspellingen
+            </span>
+            {topPred&&(
+              <span style={{color:C.gray}}>
+                Meest voorspeld: <strong style={{color:C.green}}>{topPred[0]}</strong>
+                <span style={{color:C.gray}}> ({topPred[1]}×)</span>
+              </span>
+            )}
+            <button
+              onClick={()=>setView("dagprogramma")}
+              style={{...S.btn("green"), fontSize:11, padding:"4px 10px"}}
+            >
+              Alle voorspellingen →
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── COUNTDOWN ───────────────────────────────────────────────────────────────
 function Countdown(){
   const [timeLeft,setTimeLeft]=useState(()=>Math.max(0,DEADLINE-new Date()));
@@ -1064,6 +1214,9 @@ function HomeView({setView,ctx}){
           </div>
         </div>
       </div>
+      {/* Nu Live blok — alleen tonen als er een wedstrijd bezig is */}
+      <NuLiveBlok liveScore={ctx.liveScore} ctx={ctx} setView={setView}/>
+
       {/* Prijzen */}
       <div style={{...S.card, padding:0, overflow:"hidden", marginBottom:14}}>
         <div style={{background:"#f0faf6", padding:"14px 20px", borderBottom:`1px solid ${COLORS.border}`}}>
@@ -1099,47 +1252,6 @@ function HomeView({setView,ctx}){
         </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-        <div style={S.card}>
-          <h2 style={S.h2}>Puntentelling</h2>
-          <div style={{background:"#f0f0f0",borderRadius:5,padding:"4px 8px",marginBottom:8}}>
-            <span style={{fontSize:11,fontWeight:800,color:COLORS.gray,textTransform:"uppercase",letterSpacing:0.5}}>Groepsfase</span>
-          </div>
-          <p style={{margin:"0 0 3px",fontSize:13}}>✅ Juiste toto: <strong>3 pt</strong></p>
-          <p style={{margin:"0 0 3px",fontSize:13}}>🎯 Exacte uitslag: <strong>5 pt</strong></p>
-          <p style={{margin:"0 0 10px",fontSize:13}}>🏆 Doorstoot naar 1/16: <strong>{DOORSTOOT_PTS} pt</strong>/land</p>
-          <div style={{background:"#f0f0f0",borderRadius:5,padding:"4px 8px",marginBottom:8}}>
-            <span style={{fontSize:11,fontWeight:800,color:COLORS.gray,textTransform:"uppercase",letterSpacing:0.5}}>Knock-out (na 90 min)</span>
-          </div>
-          <p style={{margin:"0 0 3px",fontSize:13}}>✅ Juiste toto: <strong>{KO_TOTO_PTS} pt</strong></p>
-          <p style={{margin:"0 0 10px",fontSize:13}}>🎯 Exacte uitslag: <strong>{KO_EXACT_PTS} pt</strong></p>
-          <div style={{background:"#f0f0f0",borderRadius:5,padding:"4px 8px",marginBottom:8}}>
-            <span style={{fontSize:11,fontWeight:800,color:COLORS.gray,textTransform:"uppercase",letterSpacing:0.5}}>Bonusvragen</span>
-          </div>
-          {ctx.bonusQuestions.length===0
-            ? <p style={{margin:0,fontSize:13}}>🎁 Punten per vraag: <strong>variabel</strong></p>
-            : (()=>{
-                const pts=ctx.bonusQuestions.map(q=>q.points??20);
-                const min=Math.min(...pts),max=Math.max(...pts);
-                return min===max
-                  ? <p style={{margin:0,fontSize:13}}>🎁 Goed antwoord: <strong>{min} pt</strong></p>
-                  : <p style={{margin:0,fontSize:13}}>🎁 Goed antwoord: <strong>{min}–{max} pt</strong> <span style={{fontSize:11,color:COLORS.gray}}>(per vraag)</span></p>;
-              })()
-          }
-        </div>
-        <div style={S.card}>
-          <div style={{...S.row,marginBottom:0,justifyContent:"space-between"}}>
-            <h2 style={{...S.h2,margin:0}}>Laatst toegevoegde deelnemers</h2>
-            <button style={{...S.btn("green"),fontSize:12,padding:"6px 12px"}} onClick={()=>setView("standings")}>Bekijk alle deelnemers →</button>
-          </div>
-          <div style={{fontSize:36,fontWeight:800,color:COLORS.green}}>{ctx.participants.length}<span style={{fontSize:14,fontWeight:400,color:COLORS.gray}}></span></div>
-          <div style={{fontSize:12,color:COLORS.gray,marginBottom:10}}>deelnemers aangemeld</div>
-          {[...ctx.participants].reverse().slice(0,8).map(p=>(
-            <div key={p.id} style={{fontSize:13,padding:"3px 0",borderBottom:`1px solid ${COLORS.border}`}}>{p.first_name} {p.last_name}</div>
-          ))}
-          {ctx.participants.length>8&&<div style={{fontSize:12,color:COLORS.gray,marginTop:4}}>…en {ctx.participants.length-8} anderen</div>}
-        </div>
-      </div>
 
       {/* Top 5 klassement */}
       {(()=>{
@@ -1496,6 +1608,48 @@ function HomeView({setView,ctx}){
           </div>
         </div>
       )}
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+        <div style={S.card}>
+          <h2 style={S.h2}>Puntentelling</h2>
+          <div style={{background:"#f0f0f0",borderRadius:5,padding:"4px 8px",marginBottom:8}}>
+            <span style={{fontSize:11,fontWeight:800,color:COLORS.gray,textTransform:"uppercase",letterSpacing:0.5}}>Groepsfase</span>
+          </div>
+          <p style={{margin:"0 0 3px",fontSize:13}}>✅ Juiste toto: <strong>3 pt</strong></p>
+          <p style={{margin:"0 0 3px",fontSize:13}}>🎯 Exacte uitslag: <strong>5 pt</strong></p>
+          <p style={{margin:"0 0 10px",fontSize:13}}>🏆 Doorstoot naar 1/16: <strong>{DOORSTOOT_PTS} pt</strong>/land</p>
+          <div style={{background:"#f0f0f0",borderRadius:5,padding:"4px 8px",marginBottom:8}}>
+            <span style={{fontSize:11,fontWeight:800,color:COLORS.gray,textTransform:"uppercase",letterSpacing:0.5}}>Knock-out (na 90 min)</span>
+          </div>
+          <p style={{margin:"0 0 3px",fontSize:13}}>✅ Juiste toto: <strong>{KO_TOTO_PTS} pt</strong></p>
+          <p style={{margin:"0 0 10px",fontSize:13}}>🎯 Exacte uitslag: <strong>{KO_EXACT_PTS} pt</strong></p>
+          <div style={{background:"#f0f0f0",borderRadius:5,padding:"4px 8px",marginBottom:8}}>
+            <span style={{fontSize:11,fontWeight:800,color:COLORS.gray,textTransform:"uppercase",letterSpacing:0.5}}>Bonusvragen</span>
+          </div>
+          {ctx.bonusQuestions.length===0
+            ? <p style={{margin:0,fontSize:13}}>🎁 Punten per vraag: <strong>variabel</strong></p>
+            : (()=>{
+                const pts=ctx.bonusQuestions.map(q=>q.points??20);
+                const min=Math.min(...pts),max=Math.max(...pts);
+                return min===max
+                  ? <p style={{margin:0,fontSize:13}}>🎁 Goed antwoord: <strong>{min} pt</strong></p>
+                  : <p style={{margin:0,fontSize:13}}>🎁 Goed antwoord: <strong>{min}–{max} pt</strong> <span style={{fontSize:11,color:COLORS.gray}}>(per vraag)</span></p>;
+              })()
+          }
+        </div>
+        <div style={S.card}>
+          <div style={{...S.row,marginBottom:0,justifyContent:"space-between"}}>
+            <h2 style={{...S.h2,margin:0}}>Laatst toegevoegde deelnemers</h2>
+            <button style={{...S.btn("green"),fontSize:12,padding:"6px 12px"}} onClick={()=>setView("standings")}>Bekijk alle deelnemers →</button>
+          </div>
+          <div style={{fontSize:36,fontWeight:800,color:COLORS.green}}>{ctx.participants.length}<span style={{fontSize:14,fontWeight:400,color:COLORS.gray}}></span></div>
+          <div style={{fontSize:12,color:COLORS.gray,marginBottom:10}}>deelnemers aangemeld</div>
+          {[...ctx.participants].reverse().slice(0,8).map(p=>(
+            <div key={p.id} style={{fontSize:13,padding:"3px 0",borderBottom:`1px solid ${COLORS.border}`}}>{p.first_name} {p.last_name}</div>
+          ))}
+          {ctx.participants.length>8&&<div style={{fontSize:12,color:COLORS.gray,marginTop:4}}>…en {ctx.participants.length-8} anderen</div>}
+        </div>
+      </div>
 
     </div>
   );
@@ -2048,18 +2202,11 @@ function DeelnemerOverlay({p, ctx, onClose}){
   });
 
   // Hoogste en laagste stand uit rankingSnapshot (matches_played >= 1)
-  // Per matches_played batch alleen de laatste snapshot meenemen (deduplicatie)
+  // Hoogste en laagste stand — simpelweg min/max over alle snapshots met matches_played >= 1
+  // Dubbele rijen per batch hebben toch dezelfde rank, dus deduplicatie is niet nodig
   const allMySnaps=ctx.rankingSnapshot.filter(r=>r.participant_id===p.id&&(r.matches_played??0)>=1);
-  const mySnapDedup=(()=>{
-    const map={};
-    allMySnaps.forEach(r=>{
-      const mp=r.matches_played??0;
-      if(!map[mp]||new Date(r.created_at)>new Date(map[mp].created_at)) map[mp]=r;
-    });
-    return Object.values(map);
-  })();
-  const hoogsteStand=mySnapDedup.length>0?Math.min(...mySnapDedup.map(r=>r.rank)):null;
-  const laagsteStand=mySnapDedup.length>0?Math.max(...mySnapDedup.map(r=>r.rank)):null;
+  const hoogsteStand=allMySnaps.length>0?Math.min(...allMySnaps.map(r=>r.rank)):null;
+  const laagsteStand=allMySnaps.length>0?Math.max(...allMySnaps.map(r=>r.rank)):null;
 
   // Sluit bij klik buiten overlay
   function handleBackdrop(e){if(e.target===e.currentTarget)onClose();}

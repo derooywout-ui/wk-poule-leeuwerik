@@ -3144,8 +3144,12 @@ function DagProgrammaView({ctx}){
 
 
 // ─── ADMIN INSTELLINGEN ───────────────────────────────────────────────────────
-function AdminInstellingen(){
+function AdminInstellingen({ctx}){
+  const C = COLORS;
   const [override,setOverride]=React.useState(()=>localStorage.getItem("deadlineOverride")==="true");
+  const [liveForm,setLiveForm]=React.useState({home_team:"Nederland",away_team:"Duitsland",home_goals:1,away_goals:0,minute:67,status:"IN_PLAY"});
+  const [liveSaving,setLiveSaving]=React.useState(false);
+  const [liveMsg,setLiveMsg]=React.useState("");
 
   function toggle(){
     const next=!override;
@@ -3154,27 +3158,119 @@ function AdminInstellingen(){
     setOverride(next);
   }
 
+  async function setLiveOverride(){
+    setLiveSaving(true);
+    // Verwijder bestaande rij
+    await fetch(`${SUPABASE_URL}/rest/v1/live_score?id=neq.00000000-0000-0000-0000-000000000000`,{
+      method:"DELETE",
+      headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,Prefer:"return=minimal"},
+    });
+    // Schrijf nep live score
+    const row={
+      match_id:null,
+      home_team:liveForm.home_team,
+      away_team:liveForm.away_team,
+      home_goals:parseInt(liveForm.home_goals),
+      away_goals:parseInt(liveForm.away_goals),
+      minute:parseInt(liveForm.minute)||null,
+      status:liveForm.status,
+      updated_at:new Date().toISOString(),
+    };
+    await fetch(`${SUPABASE_URL}/rest/v1/live_score`,{
+      method:"POST",
+      headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},
+      body:JSON.stringify([row]),
+    });
+    ctx.setLiveScore(row);
+    setLiveSaving(false);
+    setLiveMsg("✅ Live score actief — check de homepage!");
+    setTimeout(()=>setLiveMsg(""),4000);
+  }
+
+  async function clearLiveOverride(){
+    setLiveSaving(true);
+    await fetch(`${SUPABASE_URL}/rest/v1/live_score?id=neq.00000000-0000-0000-0000-000000000000`,{
+      method:"DELETE",
+      headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,Prefer:"return=minimal"},
+    });
+    ctx.setLiveScore(null);
+    setLiveSaving(false);
+    setLiveMsg("🗑 Live score gewist");
+    setTimeout(()=>setLiveMsg(""),3000);
+  }
+
   return(
-    <div style={{...S.card,maxWidth:480}}>
-      <h3 style={{...S.h3,marginBottom:4}}>🛠️ Testinstellingen</h3>
-      <p style={{fontSize:13,color:COLORS.gray,marginBottom:20}}>Alleen zichtbaar voor jou (opgeslagen in browser). Andere deelnemers worden niet beïnvloed.</p>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",background:override?"#fff8e1":"#f9f9f9",border:`1px solid ${override?COLORS.yellow:COLORS.border}`,borderRadius:8}}>
-        <div>
-          <div style={{fontWeight:700,fontSize:14,color:COLORS.dark}}>Deadline gesimuleerd als verstreken</div>
-          <div style={{fontSize:12,color:COLORS.gray,marginTop:2}}>Voorspellingen worden zichtbaar in Programma</div>
+    <div style={{maxWidth:520}}>
+      {/* Deadline override */}
+      <div style={S.card}>
+        <h3 style={{...S.h3,marginBottom:4}}>🛠️ Testinstellingen</h3>
+        <p style={{fontSize:13,color:C.gray,marginBottom:16}}>Alleen zichtbaar voor jou (opgeslagen in browser). Andere deelnemers worden niet beïnvloed.</p>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",background:override?"#fff8e1":"#f9f9f9",border:`1px solid ${override?C.yellow:C.border}`,borderRadius:8}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:14,color:C.dark}}>Deadline gesimuleerd als verstreken</div>
+            <div style={{fontSize:12,color:C.gray,marginTop:2}}>Voorspellingen worden zichtbaar in Programma</div>
+          </div>
+          <button onClick={toggle} style={{...S.btn(override?"yellow":"green"),minWidth:80}}>
+            {override?"Uitzetten":"Aanzetten"}
+          </button>
         </div>
-        <button
-          onClick={toggle}
-          style={{...S.btn(override?"yellow":"green"),minWidth:80}}
-        >
-          {override?"Uitzetten":"Aanzetten"}
-        </button>
+        {override&&(
+          <div style={{...S.alert("warn"),marginTop:12,fontSize:12}}>
+            ⚠️ Override actief — zet uit na het testen!
+          </div>
+        )}
       </div>
-      {override&&(
-        <div style={{...S.alert("warn"),marginTop:12,fontSize:12}}>
-          ⚠️ Override actief — zet uit na het testen!
+
+      {/* Live score override */}
+      <div style={S.card}>
+        <h3 style={{...S.h3,marginBottom:4}}>⚽ Live score testen</h3>
+        <p style={{fontSize:13,color:C.gray,marginBottom:16}}>Simuleer een live wedstrijd om het Nu Live blok op de homepage te testen. Schrijft direct naar Supabase — zichtbaar voor alle gebruikers!</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:8,alignItems:"center",marginBottom:10}}>
+          <div>
+            <label style={S.label}>Thuisteam</label>
+            <input style={S.input} value={liveForm.home_team} onChange={e=>setLiveForm(f=>({...f,home_team:e.target.value}))} placeholder="Nederland"/>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,paddingTop:18}}>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input type="number" min="0" max="20" style={{...S.input,width:48,textAlign:"center",padding:"7px 4px"}}
+                value={liveForm.home_goals} onChange={e=>setLiveForm(f=>({...f,home_goals:e.target.value}))}/>
+              <span style={{fontWeight:800,color:C.gray}}>–</span>
+              <input type="number" min="0" max="20" style={{...S.input,width:48,textAlign:"center",padding:"7px 4px"}}
+                value={liveForm.away_goals} onChange={e=>setLiveForm(f=>({...f,away_goals:e.target.value}))}/>
+            </div>
+          </div>
+          <div>
+            <label style={S.label}>Uitteam</label>
+            <input style={S.input} value={liveForm.away_team} onChange={e=>setLiveForm(f=>({...f,away_team:e.target.value}))} placeholder="Duitsland"/>
+          </div>
         </div>
-      )}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+          <div>
+            <label style={S.label}>Minuut</label>
+            <input type="number" min="1" max="120" style={S.input} value={liveForm.minute}
+              onChange={e=>setLiveForm(f=>({...f,minute:e.target.value}))} placeholder="67"/>
+          </div>
+          <div>
+            <label style={S.label}>Status</label>
+            <select style={S.input} value={liveForm.status} onChange={e=>setLiveForm(f=>({...f,status:e.target.value}))}>
+              <option value="IN_PLAY">IN_PLAY (bezig)</option>
+              <option value="PAUSED">PAUSED (rust)</option>
+            </select>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <button style={S.btn("green")} onClick={setLiveOverride} disabled={liveSaving}>
+            {liveSaving?"Bezig…":"⚽ Live score activeren"}
+          </button>
+          <button style={{...S.btn(),background:"#fdecea",color:"#c62828"}} onClick={clearLiveOverride} disabled={liveSaving}>
+            🗑 Live score wissen
+          </button>
+          {liveMsg&&<span style={{fontSize:13,fontWeight:600,color:C.green}}>{liveMsg}</span>}
+        </div>
+        <div style={{...S.alert("warn"),marginTop:12,fontSize:12}}>
+          ⚠️ Dit schrijft naar de live database — zichtbaar voor alle deelnemers. Vergeet niet te wissen na het testen!
+        </div>
+      </div>
     </div>
   );
 }
@@ -3206,7 +3302,7 @@ function AdminView({ctx}){
       {tab==="beoordeel"&&<AdminBeoordeel ctx={ctx}/>}
       {tab==="users"&&<AdminUsers ctx={ctx}/>}
       {tab==="news"&&<AdminNews ctx={ctx}/>}
-      {tab==="instellingen"&&<AdminInstellingen/>}
+      {tab==="instellingen"&&<AdminInstellingen ctx={ctx}/>}
     </div>
   );
 }

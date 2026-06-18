@@ -2560,27 +2560,58 @@ function DeelnemerOverlay({p, ctx, onClose}){
 }
 
 // ─── SPEELRONDE MAP ──────────────────────────────────────────────────────────
-// Koppelt elke match_id aan een speelronde (1-3 voor groepsfase)
-const SPEELRONDE_MAP = (()=>{
-  const months={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
-  const map = {};
-  // Per groep: sorteer op datum/tijd, geef ronde 1/2/3
-  Object.entries(WK_GROUPS).forEach(([grp, teams])=>{
-    const matches = [];
-    teams.forEach((t1,i)=>teams.slice(i+1).forEach(t2=>{
-      const mid = getMatchId(grp, t1.name, t2.name);
-      const sch = MATCH_SCHEDULE[mid];
-      if(!sch) return;
-      const [day,mon] = sch.date.split(" ");
-      const [h,m] = sch.time.split(":");
-      const dt = new Date(2026, months[mon], parseInt(day), parseInt(h), parseInt(m));
-      matches.push({mid, dt});
-    }));
-    matches.sort((a,b)=>a.dt-b.dt);
-    matches.forEach((m,i)=>{ map[m.mid] = i+1; }); // ronde 1, 2 of 3
-  });
-  return map;
-})();
+// Ronde 1 = 1e speeldag per groep, Ronde 2 = 2e, Ronde 3 = 3e (laatste groepswedstrijden)
+// Per groep spelen 4 teams → 6 wedstrijden op 3 × 2 speeldagen
+const SPEELRONDE_MAP = {
+  // Groep A
+  "A-Mexico-Zuid-Afrika":1, "A-Zuid-Korea-Tsjechië":1,
+  "A-Zuid-Afrika-Tsjechië":2, "A-Mexico-Zuid-Korea":2,
+  "A-Mexico-Tsjechië":3, "A-Zuid-Afrika-Zuid-Korea":3,
+  // Groep B
+  "B-Canada-Bosnië-Herzegovina":1, "B-Qatar-Zwitserland":1,
+  "B-Bosnië-Herzegovina-Zwitserland":2, "B-Canada-Qatar":2,
+  "B-Canada-Zwitserland":3, "B-Bosnië-Herzegovina-Qatar":3,
+  // Groep C
+  "C-Brazilië-Marokko":1, "C-Haïti-Schotland":1,
+  "C-Marokko-Schotland":2, "C-Brazilië-Haïti":2,
+  "C-Brazilië-Schotland":3, "C-Marokko-Haïti":3,
+  // Groep D
+  "D-VS-Paraguay":1, "D-Australië-Turkije":1,
+  "D-Turkije-Paraguay":2, "D-VS-Australië":2,
+  "D-Turkije-VS":3, "D-Paraguay-Australië":3,
+  // Groep E
+  "E-Duitsland-Curaçao":1, "E-Ivoorkust-Ecuador":1,
+  "E-Duitsland-Ivoorkust":2, "E-Curaçao-Ecuador":2,
+  "E-Duitsland-Ecuador":3, "E-Curaçao-Ivoorkust":3,
+  // Groep F
+  "F-Nederland-Japan":1, "F-Zweden-Tunesië":1,
+  "F-Japan-Tunesië":2, "F-Nederland-Zweden":2,
+  "F-Japan-Zweden":3, "F-Nederland-Tunesië":3,
+  // Groep G
+  "G-België-Egypte":1, "G-Iran-Nieuw-Zeeland":1,
+  "G-België-Iran":2, "G-Egypte-Nieuw-Zeeland":2,
+  "G-Egypte-Iran":3, "G-België-Nieuw-Zeeland":3,
+  // Groep H
+  "H-Spanje-Kaapverdië":1, "H-Saoedi-Arabië-Uruguay":1,
+  "H-Spanje-Saoedi-Arabië":2, "H-Kaapverdië-Uruguay":2,
+  "H-Kaapverdië-Saoedi-Arabië":3, "H-Spanje-Uruguay":3,
+  // Groep I
+  "I-Frankrijk-Senegal":1, "I-Irak-Noorwegen":1,
+  "I-Frankrijk-Irak":2, "I-Senegal-Noorwegen":2,
+  "I-Frankrijk-Noorwegen":3, "I-Senegal-Irak":3,
+  // Groep J
+  "J-Argentinië-Algerije":1, "J-Oostenrijk-Jordanië":1,
+  "J-Argentinië-Oostenrijk":2, "J-Algerije-Jordanië":2,
+  "J-Argentinië-Jordanië":3, "J-Algerije-Oostenrijk":3,
+  // Groep K
+  "K-Portugal-DR Congo":1, "K-Oezbekistan-Colombia":1,
+  "K-Portugal-Oezbekistan":2, "K-DR Congo-Colombia":2,
+  "K-Portugal-Colombia":3, "K-DR Congo-Oezbekistan":3,
+  // Groep L
+  "L-Engeland-Kroatië":1, "L-Ghana-Panama":1,
+  "L-Engeland-Ghana":2, "L-Kroatië-Panama":2,
+  "L-Engeland-Panama":3, "L-Kroatië-Ghana":3,
+};
 
 function StandingsView({ctx}){
   const [selectedP,setSelectedP]=React.useState(null);

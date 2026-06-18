@@ -2559,8 +2559,71 @@ function DeelnemerOverlay({p, ctx, onClose}){
   );
 }
 
+// ─── SPEELRONDE MAP ──────────────────────────────────────────────────────────
+// Koppelt elke match_id aan een speelronde (1-3 voor groepsfase)
+const SPEELRONDE_MAP = (()=>{
+  const months={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
+  const map = {};
+  // Per groep: sorteer op datum/tijd, geef ronde 1/2/3
+  Object.entries(WK_GROUPS).forEach(([grp, teams])=>{
+    const matches = [];
+    teams.forEach((t1,i)=>teams.slice(i+1).forEach(t2=>{
+      const mid = getMatchId(grp, t1.name, t2.name);
+      const sch = MATCH_SCHEDULE[mid];
+      if(!sch) return;
+      const [day,mon] = sch.date.split(" ");
+      const [h,m] = sch.time.split(":");
+      const dt = new Date(2026, months[mon], parseInt(day), parseInt(h), parseInt(m));
+      matches.push({mid, dt});
+    }));
+    matches.sort((a,b)=>a.dt-b.dt);
+    matches.forEach((m,i)=>{ map[m.mid] = i+1; }); // ronde 1, 2 of 3
+  });
+  return map;
+})();
+
 function StandingsView({ctx}){
   const [selectedP,setSelectedP]=React.useState(null);
+
+  // ─── FILTER STATE ──────────────────────────────────────────────────────────
+  const ALLE_RONDES = [
+    {id:"r1", label:"Ronde 1"},
+    {id:"r2", label:"Ronde 2"},
+    {id:"r3", label:"Ronde 3"},
+    {id:"r16", label:"1/16"},
+    {id:"r8", label:"1/8"},
+    {id:"r4", label:"Kwart"},
+    {id:"r2ko", label:"Halve"},
+    {id:"r1ko", label:"Finale"},
+  ];
+  const [actieveRondes, setActieveRondes] = React.useState(
+    new Set(["r1","r2","r3","r16","r8","r4","r2ko","r1ko"])
+  );
+  const [toonDoorstoot, setToonDoorstoot] = React.useState(true);
+  const [toonBonus, setToonBonus] = React.useState(true);
+
+  function toggleRonde(id){
+    setActieveRondes(prev=>{
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+  function allesAan(){
+    setActieveRondes(new Set(["r1","r2","r3","r16","r8","r4","r2ko","r1ko"]));
+    setToonDoorstoot(true);
+    setToonBonus(true);
+  }
+  const isAllesAan = actieveRondes.size===8 && toonDoorstoot && toonBonus;
+
+  // Bepaal welke KO rounds gespeeld zijn
+  const gespeeldeKORounds = new Set(
+    ctx.koMatches
+      .filter(m=>m.home_goals!==null&&m.home_goals!==undefined)
+      .map(m=>m.round_id)
+  );
+  // Map KO round_id naar onze filter id
+  const KO_ROUND_MAP = {"r16":"r16","r8":"r8","r4":"r4","r2":"r2ko","r3":"r1ko","r1":"r1ko"};
 
   function calcScore(uid){
     // gToto   = 3pts per wedstrijd met juiste toto (incl. exacte uitslagen)
@@ -2572,8 +2635,11 @@ function StandingsView({ctx}){
     const pred=ctx.predictions[uid]||{};
     const koPred=ctx.koPredictions[uid]||{};
 
-    // Groepsfase punten
+    // Groepsfase punten — gefilterd op actieve rondes
     Object.entries(ctx.matchResults).forEach(([mid,result])=>{
+      const ronde=SPEELRONDE_MAP[mid];
+      const rondeId=ronde?`r${ronde}`:null;
+      if(!rondeId||!actieveRondes.has(rondeId)) return;
       const p=pred[mid];
       if(!p||p.home===undefined||p.away===undefined||p.home===""||p.away==="")return;
       const exactOk=parseInt(p.home)===parseInt(result.home)&&parseInt(p.away)===parseInt(result.away);
@@ -2582,20 +2648,23 @@ function StandingsView({ctx}){
       else if(totoOk){gToto+=3;gTotoCount++;}
     });
 
-    // Doorstoot punten (groepsfase -> r16)
-    // doorstoot_landen bevat Engelse namen; predAdv bevat NL namen → vertaal via NL_TO_EN_ALIAS
-    const predAdv=calcDoorstootFromPredictions(pred);
-    if(ctx.doorstootLanden&&ctx.doorstootLanden.length>0){
-      predAdv.forEach(t=>{
-        const enNaam=NL_TO_EN_ALIAS[t]||t.toLowerCase();
-        if(ctx.doorstootLanden.includes(enNaam)) gDoorstoot+=DOORSTOOT_PTS;
-      });
+    // Doorstoot punten — alleen als toggle aan staat
+    if(toonDoorstoot){
+      const predAdv=calcDoorstootFromPredictions(pred);
+      if(ctx.doorstootLanden&&ctx.doorstootLanden.length>0){
+        predAdv.forEach(t=>{
+          const enNaam=NL_TO_EN_ALIAS[t]||t.toLowerCase();
+          if(ctx.doorstootLanden.includes(enNaam)) gDoorstoot+=DOORSTOOT_PTS;
+        });
+      }
     }
 
-    // KO wedstrijd punten
+    // KO wedstrijd punten — gefilterd op actieve rondes
     ctx.koMatches.forEach(match=>{
       if(!match.home_team||!match.away_team) return;
       if(match.home_goals===null||match.home_goals===undefined) return;
+      const koFilterId=KO_ROUND_MAP[match.round_id];
+      if(!koFilterId||!actieveRondes.has(koFilterId)) return;
       const p=koPred[match.id];
       if(!p||p.home===undefined||p.home===null) return;
       const exactOk=parseInt(p.home)===parseInt(match.home_goals)&&parseInt(p.away)===parseInt(match.away_goals);
@@ -2604,12 +2673,15 @@ function StandingsView({ctx}){
       else if(totoOk){koToto+=KO_TOTO_PTS;}
     });
 
-    Object.entries(ctx.bonusScores[uid]||{}).forEach(([qi,v])=>{
-      if(v){
-        const q=ctx.bonusQuestions.find(bq=>String(bq.idx)===String(qi));
-        bonus+=(q?.points??20);
-      }
-    });
+    // Bonus punten — alleen als toggle aan staat
+    if(toonBonus){
+      Object.entries(ctx.bonusScores[uid]||{}).forEach(([qi,v])=>{
+        if(v){
+          const q=ctx.bonusQuestions.find(bq=>String(bq.idx)===String(qi));
+          bonus+=(q?.points??20);
+        }
+      });
+    }
     const total=gToto+gExact+gDoorstoot+koToto+koExact+bonus;
     return{gToto,gExact,gDoorstoot,koToto,koExact,bonus,total,gTotoCount,gExactCount};
   }
@@ -2668,6 +2740,63 @@ function StandingsView({ctx}){
   return(
     <div style={S.card}>
       {selectedP&&<DeelnemerOverlay p={selectedP} ctx={ctx} onClose={()=>setSelectedP(null)}/>}
+      {/* Filter UI */}
+      <div style={{marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:11,fontWeight:700,color:COLORS.gray,textTransform:"uppercase",letterSpacing:0.5,flexShrink:0}}>Speelrondes:</span>
+          {ALLE_RONDES.map(r=>{
+            // Bepaal of ronde gespeeld is
+            const heeftData = r.id.startsWith("r") && !["r16","r8","r4","r2ko","r1ko"].includes(r.id)
+              ? Object.keys(ctx.matchResults).some(mid=>SPEELRONDE_MAP[mid]===parseInt(r.id.replace("r","")))
+              : gespeeldeKORounds.has(
+                  Object.entries(KO_ROUND_MAP).find(([,v])=>v===r.id)?.[0]||""
+                );
+            const aan = actieveRondes.has(r.id);
+            return(
+              <button key={r.id} onClick={()=>heeftData&&toggleRonde(r.id)}
+                style={{
+                  padding:"5px 10px",borderRadius:6,border:"none",cursor:heeftData?"pointer":"default",
+                  fontWeight:700,fontSize:12,
+                  background:!heeftData?"#f0f0f0":aan?COLORS.green:"#e0e0e0",
+                  color:!heeftData?"#bbb":aan?"#fff":COLORS.dark,
+                  opacity:!heeftData?0.5:1,
+                }}
+              >{r.label}</button>
+            );
+          })}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:11,fontWeight:700,color:COLORS.gray,textTransform:"uppercase",letterSpacing:0.5,flexShrink:0}}>Extra:</span>
+          {[
+            {id:"doorstoot",label:"🏆 Doorstoot",aan:toonDoorstoot,toggle:()=>setToonDoorstoot(v=>!v),
+             heeftData:ctx.doorstootLanden&&ctx.doorstootLanden.length>0},
+            {id:"bonus",label:"🎁 Bonus",aan:toonBonus,toggle:()=>setToonBonus(v=>!v),
+             heeftData:ctx.bonusQuestions.some(q=>Object.values(ctx.bonusScores).some(s=>s[q.idx]!==undefined))},
+          ].map(item=>(
+            <button key={item.id} onClick={()=>item.heeftData&&item.toggle()}
+              style={{
+                padding:"5px 10px",borderRadius:6,border:"none",cursor:item.heeftData?"pointer":"default",
+                fontWeight:700,fontSize:12,
+                background:!item.heeftData?"#f0f0f0":item.aan?COLORS.green:"#e0e0e0",
+                color:!item.heeftData?"#bbb":item.aan?"#fff":COLORS.dark,
+                opacity:!item.heeftData?0.5:1,
+              }}
+            >{item.label}</button>
+          ))}
+          {!isAllesAan&&(
+            <button onClick={allesAan} style={{
+              padding:"5px 10px",borderRadius:6,border:`1px solid ${COLORS.border}`,
+              background:"#fff",color:COLORS.green,fontWeight:700,fontSize:12,cursor:"pointer",
+            }}>↺ Reset</button>
+          )}
+        </div>
+        {!isAllesAan&&(
+          <div style={{marginTop:6,fontSize:11,color:COLORS.gray,fontStyle:"italic"}}>
+            Gefilterd klassement — niet alle rondes zijn geselecteerd
+          </div>
+        )}
+      </div>
+
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:16}}>
         <h2 style={{...S.h2,margin:0}}>Klassement</h2>
         {(()=>{

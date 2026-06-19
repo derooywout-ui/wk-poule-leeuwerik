@@ -921,7 +921,10 @@ function NuLiveBlok({liveScore, ctx, setView}){
       if(result&&result.home!==null&&result.home!==undefined) return;
       const[day,mon]=sch.date.split(" ");const[h,m]=sch.time.split(":");
       const dt=new Date(2026,months[mon],parseInt(day),parseInt(h),parseInt(m));
-      if(dt>now&&(!vroegsteDt||dt<vroegsteDt)){vroegsteDt=dt;vroegste={mid,sch,dt};}
+      // Pak de wedstrijd zonder uitslag met de vroegste starttijd — ook als die
+      // al begonnen is (dt<=now). Zo blijft een lopende wedstrijd zonder live-data
+      // zichtbaar als "nu bezig" i.p.v. dat het systeem doorschiet naar de wedstrijd erna.
+      if(!vroegsteDt||dt<vroegsteDt){vroegsteDt=dt;vroegste={mid,sch,dt};}
     });
     return vroegste;
   },[ctx.matchResults]);
@@ -933,8 +936,12 @@ function NuLiveBlok({liveScore, ctx, setView}){
   // - er een uitslag is én
   // - volgende wedstrijd nog niet begonnen ÓÓOR net begonnen maar nog geen live data (< 10 min geleden)
   const volgendeBegonnen = volgende && now >= volgende.dt;
-  const volgendeTe10Min = volgende && now < new Date(volgende.dt.getTime() + 10*60000);
-  const toonLaatstGespeeld=!isLive&&!!laatstGespeeld&&(!volgendeBegonnen||(volgendeBegonnen&&volgendeTe10Min));
+  // Geen live-API beschikbaar, dus "Nu bezig" blijft zichtbaar zolang de wedstrijd
+  // loopt zonder uitslag — niet beperkt tot een korte marge na aanvang.
+  // We geven een ruime marge van 3 uur (langer dan een wedstrijd + rust kan duren)
+  // zodat het blok niet eindeloos "nu bezig" blijft tonen als een uitslag vergeten wordt.
+  const volgendeBinnenRedelijkeTijd = volgende && now < new Date(volgende.dt.getTime() + 3*60*60000);
+  const toonLaatstGespeeld=!isLive&&!!laatstGespeeld&&(!volgendeBegonnen||(volgendeBegonnen&&volgendeBinnenRedelijkeTijd));
 
   if(!isLive&&!toonLaatstGespeeld) return null;
 

@@ -2425,9 +2425,17 @@ function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
           scales:{
             y:{
               reverse:true,min:yMin,max:yMax,
+              afterBuildTicks:(axis)=>{
+                // Forceer expliciete tickwaarden zodat #1 altijd zichtbaar is,
+                // los van Chart.js' automatische stepSize-afronding
+                const step=Math.max(1,Math.ceil(totaalDeelnemers/7));
+                const vals=[1];
+                for(let v=step;v<totaalDeelnemers;v+=step) vals.push(v);
+                if(vals[vals.length-1]!==totaalDeelnemers) vals.push(totaalDeelnemers);
+                axis.ticks=vals.map(v=>({value:v}));
+              },
               ticks:{
                 color:textColor,font:{size:11},
-                stepSize:Math.max(1,Math.ceil(totaalDeelnemers/8)),
                 callback:v=>(v<1||v%1!==0)?"":"#"+v,
               },
               grid:{color:gridColor},border:{display:false},

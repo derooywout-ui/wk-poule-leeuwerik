@@ -3979,8 +3979,8 @@ function AdminDoorstoot({ctx}){
   return(
     <div>
       <div style={{...S.alert(""),marginBottom:14,fontSize:13,lineHeight:1.6}}>
-        <strong>Automatisch:</strong> de Apps Script vult dit elke 15 minuten bij op basis van de standings API.<br/>
-        <strong>Handmatig override:</strong> vink een land aan of uit als de API achterloopt.
+        <strong>Automatisch:</strong> de Apps Script checkt elke 5 minuten of de standings API een land als doorgestoten markeert. Let op: de API doet dit soms vertraagd of helemaal niet tijdens de groepsfase.<br/>
+        <strong>Handmatig override (aanbevolen):</strong> vink een land zelf aan zodra het mathematisch of officieel zeker door is — wacht niet op de API.
         <br/><span style={{fontSize:11,color:C.gray}}>Aangevinkt = land staat in <code>doorstoot_landen</code> tabel en telt mee voor punten.</span>
       </div>
       <div style={{...S.card,marginBottom:8,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>

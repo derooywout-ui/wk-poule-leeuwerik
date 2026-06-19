@@ -3086,13 +3086,16 @@ function calcOfficieleStand(grp, teams, matchResults) {
   }));
 
   // Onderling resultaat tiebreaker: alleen toepasbaar bij precies 2 teams gelijk
+  // BUGFIX: als onderling ook volledig gelijk is (zoals 2-2), mag dit GEEN volgorde forceren —
+  // anders ontstaat inconsistente sortering afhankelijk van a/b volgorde tijdens sort()
   function onderlingVergelijk(a, b){
     const key = `${a.name}|${b.name}`;
     const m = onderling[key];
     if(!m) return 0; // nog niet gespeeld tegen elkaar
-    if(m.ptsA !== m.ptsB) return m.ptsB - m.ptsA; // meer onderlinge punten = beter (lager getal = eerder in sort)
+    if(m.ptsA !== m.ptsB) return m.ptsB - m.ptsA; // meer onderlinge punten = beter
     if(m.saldoA !== 0) return -m.saldoA; // beter onderling doelsaldo
-    return -m.gvA; // meer onderlinge doelpunten voor
+    // Bij gelijke punten EN gelijk saldo (bv. 2-2) is er geen onderling verschil — return 0
+    return 0;
   }
 
   return stand.sort((a,b)=>{

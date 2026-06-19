@@ -2324,7 +2324,7 @@ function PredictView({ctx}){
 // ─── DEELNEMER DETAIL OVERLAY ─────────────────────────────────────────────────
 
 // ─── RANKING LIJNGRAFIEK ──────────────────────────────────────────────────────
-function RankingLijngrafiek({participantId, rankingSnapshot}){
+function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
   const chartId = `ranking_chart_${participantId}`.replace(/[^a-zA-Z0-9_]/g,"_");
 
   // Bouw datapunten: per unieke speeldatum de LAATSTE rang van die dag
@@ -2382,8 +2382,10 @@ function RankingLijngrafiek({participantId, rankingSnapshot}){
         data.push(punt?punt.rank:null);
       }
 
-      // Y-as min iets onder 1 zodat een #1-positie niet tegen de bovenrand plakt
-      const yMin = -0.5;
+      // Y-as schaalt over de volledige range: 1 t/m totaal aantal deelnemers,
+      // met een kleine marge boven #1 zodat de lijn niet tegen de rand plakt
+      const yMin = -Math.max(1, Math.round(totaalDeelnemers*0.03));
+      const yMax = totaalDeelnemers;
 
       const isDark=matchMedia("(prefers-color-scheme: dark)").matches;
       const lineColor=isDark?"#5DCAA5":"#0F6E56";
@@ -2422,9 +2424,12 @@ function RankingLijngrafiek({participantId, rankingSnapshot}){
           },
           scales:{
             y:{
-              reverse:true,min:yMin,
-              ticks:{stepSize:1,color:textColor,font:{size:11},
-                callback:v=>(v<1||v%1!==0)?"":"#"+v},
+              reverse:true,min:yMin,max:yMax,
+              ticks:{
+                color:textColor,font:{size:11},
+                stepSize:Math.max(1,Math.ceil(totaalDeelnemers/8)),
+                callback:v=>(v<1||v%1!==0)?"":"#"+v,
+              },
               grid:{color:gridColor},border:{display:false},
               title:{display:true,text:"Positie in klassement",color:textColor,font:{size:11}},
             },
@@ -2670,7 +2675,7 @@ function DeelnemerOverlay({p, ctx, onClose}){
                 </div>
               ))}
             </div>
-            <RankingLijngrafiek participantId={p.id} rankingSnapshot={ctx.rankingSnapshot}/>
+            <RankingLijngrafiek participantId={p.id} rankingSnapshot={ctx.rankingSnapshot} totaalDeelnemers={ctx.participants.length}/>
           </div>
 
           {/* Ratio voortgangsbalken */}

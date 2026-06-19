@@ -505,7 +505,7 @@ export default function App(){
       db.get("bonus_scores","select=*&limit=10000"),
       db.get("ko_matches","select=*&order=match_num"),
       db.get("ko_predictions","select=*&limit=2000"),
-      db.get("rankings_snapshot","select=participant_id,rank,matches_played,created_at&order=created_at.desc&limit=5000"),
+      db.get("rankings_snapshot","select=participant_id,rank,matches_played,speeldatum,created_at&order=created_at.desc&limit=5000"),
       db.get("news_items","select=*&order=created_at.desc&limit=3"),
       db.get("rss_items","select=*&order=pub_date.desc&limit=5"),
       db.get("doorstoot_landen","select=team_name"),
@@ -1346,6 +1346,7 @@ function HelpView(){
 // ─── HOME ────────────────────────────────────────────────────────────────────
 function HomeView({setView,ctx}){
   const dp=deadlinePassed();
+  const [stijgersDalersModus,setStijgersDalersModus]=React.useState("wedstrijd"); // "wedstrijd" | "dag"
   return(
     <div>
       <div style={{...S.card,background:COLORS.green,color:"#fff",textAlign:"center",padding:"0",overflow:"hidden",position:"relative"}}>
@@ -1511,29 +1512,50 @@ function HomeView({setView,ctx}){
         const C=COLORS;
 
         // ── Stijgers & dalers ──
-        const mpVals2=[...new Set(ctx.rankingSnapshot.map(r=>r.matches_played??0))].sort((a,b)=>b-a);
-        const meaningful2=mpVals2.filter(mp=>mp>0);
+        function dedupSnap(rows){
+          const map={};
+          rows.forEach(r=>{
+            const key=r.participant_id;
+            if(!map[key]||new Date(r.created_at)>new Date(map[key].created_at)) map[key]=r;
+          });
+          return Object.values(map);
+        }
+
         let top3stijgers=[], top3dalers=[];
-        if(meaningful2.length>=2){
-          // Dedupliceer: per deelnemer alleen de laatste rij per matches_played groep
-          function dedupSnap(rows){
-            const map={};
-            rows.forEach(r=>{
-              const key=r.participant_id;
-              if(!map[key]||new Date(r.created_at)>new Date(map[key].created_at)) map[key]=r;
-            });
-            return Object.values(map);
+
+        if(stijgersDalersModus==="dag"){
+          // ── PER DAG ──────────────────────────────────────────────────────
+          const datums=[...new Set(ctx.rankingSnapshot.map(r=>r.speeldatum).filter(Boolean))].sort().reverse();
+          if(datums.length>=2){
+            const laatsteDag=datums[0];
+            const vorigeDag=datums[1];
+            const latestSnap=dedupSnap(ctx.rankingSnapshot.filter(r=>r.speeldatum===laatsteDag));
+            const prevSnap=dedupSnap(ctx.rankingSnapshot.filter(r=>r.speeldatum===vorigeDag));
+            const changes=latestSnap.map(cur=>{
+              const prev=prevSnap.find(p=>p.participant_id===cur.participant_id);
+              const participant=ctx.participants.find(p=>p.id===cur.participant_id);
+              if(!prev||!participant) return null;
+              return{name:`${participant.first_name} ${participant.last_name}`,rankNow:cur.rank,rankPrev:prev.rank,change:prev.rank-cur.rank};
+            }).filter(Boolean);
+            top3stijgers=changes.filter(c=>c.change>0).sort((a,b)=>b.change-a.change||a.rankNow-b.rankNow).slice(0,3);
+            top3dalers=changes.filter(c=>c.change<0).sort((a,b)=>a.change-b.change||b.rankNow-a.rankNow).slice(0,3);
           }
-          const latestSnap=dedupSnap(ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===meaningful2[0]));
-          const prevSnap=dedupSnap(ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===meaningful2[1]));
-          const changes=latestSnap.map(cur=>{
-            const prev=prevSnap.find(p=>p.participant_id===cur.participant_id);
-            const participant=ctx.participants.find(p=>p.id===cur.participant_id);
-            if(!prev||!participant) return null;
-            return{name:`${participant.first_name} ${participant.last_name}`,rankNow:cur.rank,rankPrev:prev.rank,change:prev.rank-cur.rank};
-          }).filter(Boolean);
-          top3stijgers=changes.filter(c=>c.change>0).sort((a,b)=>b.change-a.change||a.rankNow-b.rankNow).slice(0,3);
-          top3dalers=changes.filter(c=>c.change<0).sort((a,b)=>a.change-b.change||b.rankNow-a.rankNow).slice(0,3);
+        } else {
+          // ── PER WEDSTRIJD (standaard) ───────────────────────────────────
+          const mpVals2=[...new Set(ctx.rankingSnapshot.map(r=>r.matches_played??0))].sort((a,b)=>b-a);
+          const meaningful2=mpVals2.filter(mp=>mp>0);
+          if(meaningful2.length>=2){
+            const latestSnap=dedupSnap(ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===meaningful2[0]));
+            const prevSnap=dedupSnap(ctx.rankingSnapshot.filter(r=>(r.matches_played??0)===meaningful2[1]));
+            const changes=latestSnap.map(cur=>{
+              const prev=prevSnap.find(p=>p.participant_id===cur.participant_id);
+              const participant=ctx.participants.find(p=>p.id===cur.participant_id);
+              if(!prev||!participant) return null;
+              return{name:`${participant.first_name} ${participant.last_name}`,rankNow:cur.rank,rankPrev:prev.rank,change:prev.rank-cur.rank};
+            }).filter(Boolean);
+            top3stijgers=changes.filter(c=>c.change>0).sort((a,b)=>b.change-a.change||a.rankNow-b.rankNow).slice(0,3);
+            top3dalers=changes.filter(c=>c.change<0).sort((a,b)=>a.change-b.change||b.rankNow-a.rankNow).slice(0,3);
+          }
         }
 
         // ── Ratio groep toto & exact ──
@@ -1585,7 +1607,26 @@ function HomeView({setView,ctx}){
             {/* Stijgers & dalers */}
             {(top3stijgers.length>0||top3dalers.length>0)&&(
               <div style={{marginBottom:20}}>
-                <div style={{fontSize:12,fontWeight:700,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Top 3 sterkste stijgers & dalers</div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:4}}>
+                    <span style={{fontSize:12,fontWeight:700,color:C.gray,textTransform:"uppercase",letterSpacing:0.5}}>Top 3 sterkste stijgers & dalers</span>
+                    <Tooltip text="Vergelijkt de huidige positie in het klassement met een eerder moment. 'Per wedstrijd' kijkt naar de vorige keer dat er een uitslag werd ingevoerd. 'Per dag' kijkt naar het einde van de laatste speeldag versus de speeldag daarvoor — ook als er op de huidige dag nog niet gespeeld is."/>
+                  </div>
+                  <div style={{display:"flex",gap:4}}>
+                    <button onClick={()=>setStijgersDalersModus("wedstrijd")} style={{
+                      padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",
+                      fontWeight:700,fontSize:11,
+                      background:stijgersDalersModus==="wedstrijd"?C.green:"#e0e0e0",
+                      color:stijgersDalersModus==="wedstrijd"?"#fff":C.dark,
+                    }}>Per wedstrijd</button>
+                    <button onClick={()=>setStijgersDalersModus("dag")} style={{
+                      padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",
+                      fontWeight:700,fontSize:11,
+                      background:stijgersDalersModus==="dag"?C.green:"#e0e0e0",
+                      color:stijgersDalersModus==="dag"?"#fff":C.dark,
+                    }}>Per dag</button>
+                  </div>
+                </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   {/* Stijgers */}
                   <div>

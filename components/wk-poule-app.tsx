@@ -2558,21 +2558,25 @@ function DeelnemerOverlay({p, ctx, onClose}){
   const hoogsteStand=allMySnaps.length>0?Math.min(...allMySnaps.map(r=>r.rank)):null;
   const laagsteStand=allMySnaps.length>0?Math.max(...allMySnaps.map(r=>r.rank)):null;
 
-  // Datum (eerste keer) waarop de hoogste/laagste stand werd bereikt
+  // Datum (eerste keer) waarop de hoogste/laagste stand werd bereikt.
+  // Gebruik speeldatum (de werkelijke speeldag), niet created_at (opslagmoment
+  // van de Apps Script — kan door tijdzone/timing afwijken van de speeldag).
   function fmtSnapDate(snap){
-    if(!snap||!snap.created_at) return "";
-    const d=new Date(snap.created_at);
+    if(!snap||!snap.speeldatum) return "";
+    const [jaar,maand,dag] = snap.speeldatum.split("-").map(Number);
+    const d = new Date(jaar, maand-1, dag);
     const weekdagen=["zo","ma","di","wo","do","vr","za"];
     const wd=weekdagen[d.getDay()];
-    const dd=String(d.getDate()).padStart(2,"0");
-    const mm=String(d.getMonth()+1).padStart(2,"0");
+    const dd=String(dag).padStart(2,"0");
+    const mm=String(maand).padStart(2,"0");
     return `${wd} ${dd}-${mm}`;
   }
+  // Sorteer op speeldatum (niet created_at) om de eerste keer te vinden
   const hoogsteStandSnap = hoogsteStand!==null
-    ? allMySnaps.filter(r=>r.rank===hoogsteStand).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))[0]
+    ? allMySnaps.filter(r=>r.rank===hoogsteStand && r.speeldatum).sort((a,b)=>a.speeldatum.localeCompare(b.speeldatum))[0]
     : null;
   const laagsteStandSnap = laagsteStand!==null
-    ? allMySnaps.filter(r=>r.rank===laagsteStand).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))[0]
+    ? allMySnaps.filter(r=>r.rank===laagsteStand && r.speeldatum).sort((a,b)=>a.speeldatum.localeCompare(b.speeldatum))[0]
     : null;
   const hoogsteStandDatum = fmtSnapDate(hoogsteStandSnap);
   const laagsteStandDatum = fmtSnapDate(laagsteStandSnap);

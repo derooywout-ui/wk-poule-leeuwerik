@@ -2545,6 +2545,25 @@ function DeelnemerOverlay({p, ctx, onClose}){
   const hoogsteStand=allMySnaps.length>0?Math.min(...allMySnaps.map(r=>r.rank)):null;
   const laagsteStand=allMySnaps.length>0?Math.max(...allMySnaps.map(r=>r.rank)):null;
 
+  // Datum (eerste keer) waarop de hoogste/laagste stand werd bereikt
+  function fmtSnapDate(snap){
+    if(!snap||!snap.created_at) return "";
+    const d=new Date(snap.created_at);
+    const weekdagen=["zo","ma","di","wo","do","vr","za"];
+    const wd=weekdagen[d.getDay()];
+    const dd=String(d.getDate()).padStart(2,"0");
+    const mm=String(d.getMonth()+1).padStart(2,"0");
+    return `${wd} ${dd}-${mm}`;
+  }
+  const hoogsteStandSnap = hoogsteStand!==null
+    ? allMySnaps.filter(r=>r.rank===hoogsteStand).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))[0]
+    : null;
+  const laagsteStandSnap = laagsteStand!==null
+    ? allMySnaps.filter(r=>r.rank===laagsteStand).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))[0]
+    : null;
+  const hoogsteStandDatum = fmtSnapDate(hoogsteStandSnap);
+  const laagsteStandDatum = fmtSnapDate(laagsteStandSnap);
+
   // Doorstoot detail: welke landen voorspelde deze deelnemer als doorgestoten,
   // op basis van welke positie (1e, 2e, beste-3), en is dat land daadwerkelijk door?
   const doorstootDetail = (()=>{
@@ -2634,8 +2653,8 @@ function DeelnemerOverlay({p, ctx, onClose}){
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:0}}>
               {[
-                {label:"Hoogste stand ooit",val:hoogsteStand?`#${hoogsteStand}`:"-",icon:"📈",color:"#1b5e20"},
-                {label:"Laagste stand ooit",val:laagsteStand?`#${laagsteStand}`:"-",icon:"📉",color:"#b71c1c"},
+                {label:"Hoogste stand ooit",val:hoogsteStand?`#${hoogsteStand}`:"-",datum:hoogsteStandDatum,icon:"📈",color:"#1b5e20"},
+                {label:"Laagste stand ooit",val:laagsteStand?`#${laagsteStand}`:"-",datum:laagsteStandDatum,icon:"📉",color:"#b71c1c"},
               ].map((item,i)=>(
                 <div key={i} style={{
                   padding:"12px 14px",display:"flex",alignItems:"center",gap:10,
@@ -2644,7 +2663,9 @@ function DeelnemerOverlay({p, ctx, onClose}){
                   <span style={{fontSize:18,flexShrink:0}}>{item.icon}</span>
                   <div>
                     <div style={{fontSize:10,color:C.gray}}>{item.label}</div>
-                    <div style={{fontSize:17,fontWeight:800,color:item.color}}>{item.val}</div>
+                    <div style={{fontSize:17,fontWeight:800,color:item.color}}>
+                      {item.val}{item.datum&&<span style={{fontSize:11,fontWeight:400,color:C.gray,marginLeft:4}}>({item.datum})</span>}
+                    </div>
                   </div>
                 </div>
               ))}

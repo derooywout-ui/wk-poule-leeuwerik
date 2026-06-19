@@ -2322,6 +2322,131 @@ function PredictView({ctx}){
 // ─── STANDINGS ───────────────────────────────────────────────────────────────
 
 // ─── DEELNEMER DETAIL OVERLAY ─────────────────────────────────────────────────
+
+// ─── RANKING LIJNGRAFIEK ──────────────────────────────────────────────────────
+function RankingLijngrafiek({participantId, rankingSnapshot}){
+  const chartId = `ranking_chart_${participantId}`.replace(/[^a-zA-Z0-9_]/g,"_");
+
+  // Bouw datapunten: per unieke speeldatum de rang van deze deelnemer
+  const mySnaps = rankingSnapshot
+    .filter(r=>r.participant_id===participantId && r.speeldatum)
+    .reduce((acc,r)=>{
+      // Per speeldatum alleen de laatste snapshot (created_at hoogste)
+      if(!acc[r.speeldatum] || new Date(r.created_at) > new Date(acc[r.speeldatum].created_at)){
+        acc[r.speeldatum] = r;
+      }
+      return acc;
+    },{});
+  const dataPunten = Object.values(mySnaps).sort((a,b)=>a.speeldatum.localeCompare(b.speeldatum));
+
+  React.useEffect(()=>{
+    if(!window.Chart){
+      const s=document.createElement("script");
+      s.src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js";
+      s.onload=()=>{ if(window._wkRankingChartsReady) window._wkRankingChartsReady(); };
+      document.head.appendChild(s);
+    }
+  },[]);
+
+  React.useEffect(()=>{
+    if(dataPunten.length===0) return;
+    if(!window.Chart){
+      window._wkRankingChartsReady = () => renderChart();
+      return;
+    }
+    renderChart();
+    return ()=>{
+      const existing = window._wkRankingCharts && window._wkRankingCharts[chartId];
+      if(existing) existing.destroy();
+    };
+
+    function renderChart(){
+      const existing = window._wkRankingCharts && window._wkRankingCharts[chartId];
+      if(existing) existing.destroy();
+      const canvas = document.getElementById(chartId);
+      if(!canvas) return;
+
+      // WK periode: 11 juni t/m 19 juli 2026 — volledige as, ook als nog niet alles gespeeld is
+      const wkStart = new Date(2026,5,11);
+      const wkEind = new Date(2026,6,19);
+      const totaalDagen = Math.round((wkEind-wkStart)/86400000);
+      const maanden=["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"];
+
+      const labels=[]; const data=[];
+      for(let i=0;i<=totaalDagen;i++){
+        const d=new Date(wkStart.getTime()+i*86400000);
+        const dKey=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+        labels.push(`${d.getDate()} ${maanden[d.getMonth()]}`);
+        const punt=dataPunten.find(p=>p.speeldatum===dKey);
+        data.push(punt?punt.rank:null);
+      }
+
+      const isDark=matchMedia("(prefers-color-scheme: dark)").matches;
+      const lineColor=isDark?"#5DCAA5":"#0F6E56";
+      const fillColor=isDark?"rgba(93,202,165,0.12)":"rgba(15,110,86,0.08)";
+      const gridColor=isDark?"rgba(255,255,255,0.08)":"rgba(0,0,0,0.06)";
+      const textColor=isDark?"#D3D1C7":"#5F5E5A";
+
+      const chart=new window.Chart(canvas,{
+        type:"line",
+        data:{
+          labels:labels,
+          datasets:[{
+            label:"Positie",
+            data:data,
+            borderColor:lineColor,
+            backgroundColor:fillColor,
+            fill:true,
+            tension:0.25,
+            pointRadius:3,
+            pointHoverRadius:6,
+            pointBackgroundColor:lineColor,
+            borderWidth:2,
+            spanGaps:false,
+          }]
+        },
+        options:{
+          responsive:true,maintainAspectRatio:false,
+          plugins:{
+            legend:{display:false},
+            tooltip:{
+              callbacks:{
+                title:(items)=>items[0].label,
+                label:(item)=>item.raw===null?"Nog niet gespeeld":"Positie #"+item.raw,
+              }
+            }
+          },
+          scales:{
+            y:{
+              reverse:true,min:1,
+              ticks:{stepSize:1,color:textColor,font:{size:11},callback:v=>"#"+v},
+              grid:{color:gridColor},border:{display:false},
+              title:{display:true,text:"Positie in klassement",color:textColor,font:{size:11}},
+            },
+            x:{
+              ticks:{color:textColor,font:{size:10},maxRotation:0,autoSkip:true,maxTicksLimit:8},
+              grid:{display:false},border:{display:false},
+              title:{display:true,text:"Datum (WK 11 jun – 19 jul)",color:textColor,font:{size:11}},
+            }
+          }
+        }
+      });
+      if(!window._wkRankingCharts) window._wkRankingCharts={};
+      window._wkRankingCharts[chartId]=chart;
+    }
+  },[dataPunten.length, chartId]);
+
+  if(dataPunten.length===0) return null;
+
+  return(
+    <div style={{marginTop:10,padding:"12px 14px",borderTop:`1px solid ${COLORS.border}`}}>
+      <div style={{position:"relative",width:"100%",height:180}}>
+        <canvas id={chartId} role="img" aria-label="Lijngrafiek van klassementspositie door het WK heen"/>
+      </div>
+    </div>
+  );
+}
+
 function DeelnemerOverlay({p, ctx, onClose}){
   const C = COLORS;
   const pred = ctx.predictions[p.id]||{};
@@ -2515,6 +2640,7 @@ function DeelnemerOverlay({p, ctx, onClose}){
                 </div>
               ))}
             </div>
+            <RankingLijngrafiek participantId={p.id} rankingSnapshot={ctx.rankingSnapshot}/>
           </div>
 
           {/* Ratio voortgangsbalken */}

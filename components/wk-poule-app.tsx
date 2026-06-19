@@ -945,9 +945,15 @@ function NuLiveBlok({liveScore, ctx, setView}){
 
   if(!isLive&&!toonLaatstGespeeld) return null;
 
-  // ─── LAATST GESPEELD ──────────────────────────────────────────────────────
+  // ─── LAATST GESPEELD / NU BEZIG (zonder live data) ──────────────────────────
   if(toonLaatstGespeeld){
-    const{mid,sch,result}=laatstGespeeld;
+    // Als de volgende wedstrijd al begonnen is (maar geen live-data beschikbaar),
+    // toon DIE wedstrijd centraal met "NU BEZIG" — niet de vorige uitslag.
+    const toonNuBezigWedstrijd = volgendeBegonnen && volgende;
+    const mid = toonNuBezigWedstrijd ? volgende.mid : laatstGespeeld.mid;
+    const sch = toonNuBezigWedstrijd ? volgende.sch : laatstGespeeld.sch;
+    const result = toonNuBezigWedstrijd ? null : laatstGespeeld.result;
+
     const parts=mid.split("-");const grp=parts[0];
     const groupTeams=WK_GROUPS[grp]||[];
     let t1=null,t2=null;
@@ -958,10 +964,12 @@ function NuLiveBlok({liveScore, ctx, setView}){
     return(
       <div style={{borderRadius:12,overflow:"hidden",marginBottom:14,
         boxShadow:"0 2px 12px rgba(0,0,0,0.08)",border:`1px solid ${C.border}`}}>
-        <div style={{background:C.dark,color:"#fff",padding:"10px 16px",
+        <div style={{background:toonNuBezigWedstrijd?"#e53935":C.dark,color:"#fff",padding:"10px 16px",
           display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:16}}>⏱</span>
-          <span style={{fontWeight:800,fontSize:14,letterSpacing:0.5}}>LAATST GESPEELD</span>
+          <span style={{fontSize:16}}>{toonNuBezigWedstrijd?"●":"⏱"}</span>
+          <span style={{fontWeight:800,fontSize:14,letterSpacing:0.5}}>
+            {toonNuBezigWedstrijd?"NU BEZIG":"LAATST GESPEELD"}
+          </span>
           <span style={{marginLeft:"auto",fontSize:11,opacity:0.7}}>
             {sch.date} · {sch.time} CET · {sch.city}
           </span>
@@ -974,12 +982,16 @@ function NuLiveBlok({liveScore, ctx, setView}){
                 <FlagImg name={t1.name} size={28}/>
               </div>
             </div>
-            <div style={{background:"#f4f8f5",borderRadius:10,padding:"8px 20px",
-              display:"flex",alignItems:"center",gap:12,minWidth:100,justifyContent:"center"}}>
-              <span style={{fontSize:32,fontWeight:900,color:C.dark}}>{result.home}</span>
-              <span style={{fontSize:20,color:C.gray}}>–</span>
-              <span style={{fontSize:32,fontWeight:900,color:C.dark}}>{result.away}</span>
-            </div>
+            {result?(
+              <div style={{background:"#f4f8f5",borderRadius:10,padding:"8px 20px",
+                display:"flex",alignItems:"center",gap:12,minWidth:100,justifyContent:"center"}}>
+                <span style={{fontSize:32,fontWeight:900,color:C.dark}}>{result.home}</span>
+                <span style={{fontSize:20,color:C.gray}}>–</span>
+                <span style={{fontSize:32,fontWeight:900,color:C.dark}}>{result.away}</span>
+              </div>
+            ):(
+              <div style={{padding:"8px 20px",borderRadius:10,fontWeight:700,fontSize:14,color:C.gray}}>vs</div>
+            )}
             <div style={{flex:1}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <FlagImg name={t2.name} size={28}/>
@@ -987,12 +999,13 @@ function NuLiveBlok({liveScore, ctx, setView}){
               </div>
             </div>
           </div>
-          {volgende&&(
+          {toonNuBezigWedstrijd?(
+            <div style={{textAlign:"center",fontSize:12,color:"#e53935",fontWeight:700}}>
+              Uitslag nog niet bekend — wordt zo snel mogelijk ingevoerd
+            </div>
+          ):volgende&&(
             <div style={{textAlign:"center",fontSize:12,color:C.gray}}>
-              {volgendeBegonnen
-                ? <span style={{color:"#e53935",fontWeight:700}}>● Nu bezig: {volgende.sch.date} om {volgende.sch.time} CET</span>
-                : <span>Volgende wedstrijd: <strong style={{color:C.dark}}>{volgende.sch.date} om {volgende.sch.time} CET</strong></span>
-              }
+              Volgende wedstrijd: <strong style={{color:C.dark}}>{volgende.sch.date} om {volgende.sch.time} CET</strong>
             </div>
           )}
           {/* Voorspellingsverdeling */}

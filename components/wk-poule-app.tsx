@@ -2327,18 +2327,12 @@ function PredictView({ctx}){
 function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
   const chartId = `ranking_chart_${participantId}`.replace(/[^a-zA-Z0-9_]/g,"_");
 
-  // Bouw datapunten: per unieke speeldatum de LAATSTE rang van die dag
-  // (= eindstand van die speeldag, consistent met hoe de officiële stand ook werkt:
-  // je kijkt naar waar je aan het eind van de dag staat, niet naar tussentijdse pieken)
-  const mySnaps = rankingSnapshot
-    .filter(r=>r.participant_id===participantId && r.speeldatum)
-    .reduce((acc,r)=>{
-      if(!acc[r.speeldatum] || new Date(r.created_at) > new Date(acc[r.speeldatum].created_at)){
-        acc[r.speeldatum] = r;
-      }
-      return acc;
-    },{});
-  const dataPunten = Object.values(mySnaps).sort((a,b)=>a.speeldatum.localeCompare(b.speeldatum));
+  // Elk snapshot-moment is een punt — geen deduplicatie per dag, zodat
+  // tussentijdse pieken/dalen altijd zichtbaar zijn en consistent zijn met
+  // de hoogste/laagste-ooit tegeltjes hierboven.
+  const dataPunten = rankingSnapshot
+    .filter(r=>r.participant_id===participantId && r.matches_played>0)
+    .sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
 
   React.useEffect(()=>{
     if(!window.Chart){
@@ -2367,31 +2361,22 @@ function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
       const canvas = document.getElementById(chartId);
       if(!canvas) return;
 
-      // WK periode: 11 juni t/m 19 juli 2026 — volledige as, ook als nog niet alles gespeeld is
-      const wkStart = new Date(2026,5,11);
-      const wkEind = new Date(2026,6,19);
-      const totaalDagen = Math.round((wkEind-wkStart)/86400000);
       const maanden=["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"];
-
-      const labels=[]; const data=[];
-      for(let i=0;i<=totaalDagen;i++){
-        const d=new Date(wkStart.getTime()+i*86400000);
-        const dKey=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-        labels.push(`${d.getDate()} ${maanden[d.getMonth()]}`);
-        const punt=dataPunten.find(p=>p.speeldatum===dKey);
-        data.push(punt?punt.rank:null);
-      }
-
-      // Y-as schaalt over de volledige range: 1 t/m totaal aantal deelnemers,
-      // met een kleine marge boven #1 zodat de lijn niet tegen de rand plakt
-      const yMin = -Math.max(1, Math.round(totaalDeelnemers*0.03));
-      const yMax = totaalDeelnemers;
+      const labels = dataPunten.map(p=>{
+        const d = new Date(p.created_at);
+        return `${d.getDate()} ${maanden[d.getMonth()]}`;
+      });
+      const data = dataPunten.map(p=>p.rank);
 
       const isDark=matchMedia("(prefers-color-scheme: dark)").matches;
       const lineColor=isDark?"#5DCAA5":"#0F6E56";
       const fillColor=isDark?"rgba(93,202,165,0.12)":"rgba(15,110,86,0.08)";
       const gridColor=isDark?"rgba(255,255,255,0.08)":"rgba(0,0,0,0.06)";
       const textColor=isDark?"#D3D1C7":"#5F5E5A";
+
+      // Y-as schaalt over de volledige deelnemersrange, met marge boven #1
+      const yMin = -Math.max(1, Math.round(totaalDeelnemers*0.03));
+      const yMax = totaalDeelnemers;
 
       const chart=new window.Chart(canvas,{
         type:"line",
@@ -2404,11 +2389,10 @@ function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
             backgroundColor:fillColor,
             fill:true,
             tension:0.25,
-            pointRadius:3,
+            pointRadius:2,
             pointHoverRadius:6,
             pointBackgroundColor:lineColor,
             borderWidth:2,
-            spanGaps:false,
           }]
         },
         options:{
@@ -2418,7 +2402,7 @@ function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
             tooltip:{
               callbacks:{
                 title:(items)=>items[0].label,
-                label:(item)=>item.raw===null?"Nog niet gespeeld":"Positie #"+item.raw,
+                label:(item)=>"Positie #"+item.raw,
               }
             }
           },
@@ -2426,8 +2410,6 @@ function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
             y:{
               reverse:true,min:yMin,max:yMax,
               afterBuildTicks:(axis)=>{
-                // Forceer expliciete tickwaarden zodat #1 altijd zichtbaar is,
-                // los van Chart.js' automatische stepSize-afronding
                 const step=Math.max(1,Math.ceil(totaalDeelnemers/7));
                 const vals=[1];
                 for(let v=step;v<totaalDeelnemers;v+=step) vals.push(v);
@@ -2444,7 +2426,7 @@ function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
             x:{
               ticks:{color:textColor,font:{size:10},maxRotation:0,autoSkip:true,maxTicksLimit:8},
               grid:{display:false},border:{display:false},
-              title:{display:true,text:"Datum (WK 11 jun – 19 jul)",color:textColor,font:{size:11}},
+              title:{display:true,text:"Datum",color:textColor,font:{size:11}},
             }
           }
         }
@@ -2459,10 +2441,7 @@ function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
   return(
     <div style={{marginTop:10,padding:"12px 14px",borderTop:`1px solid ${COLORS.border}`}}>
       <div style={{position:"relative",width:"100%",height:180}}>
-        <canvas id={chartId} role="img" aria-label="Lijngrafiek van klassementspositie door het WK heen"/>
-      </div>
-      <div style={{fontSize:10,color:COLORS.gray,marginTop:6,textAlign:"center"}}>
-        Toont de eindstand per speeldag. Hoogste/laagste ooit hierboven kunnen een tussentijds moment zijn dat niet in deze grafiek zichtbaar is.
+        <canvas id={chartId} role="img" aria-label="Lijngrafiek van klassementspositie door het WK heen, één punt per gemeten moment"/>
       </div>
     </div>
   );

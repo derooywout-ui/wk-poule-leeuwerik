@@ -662,7 +662,8 @@ export default function App(){
         {view==="register"&&<RegisterView setView={setView} ctx={ctx}/>}
         {view==="predict"&&<PredictView ctx={ctx}/>}
         {view==="standings"&&<StandingsView ctx={ctx}/>}
-        {view==="dagprogramma"&&<DagProgrammaView ctx={ctx}/>}
+        {view==="dagprogramma"&&<DagProgrammaView ctx={ctx} setView={setView}/>}
+        {view==="alle-standen"&&<AlleStandenView ctx={ctx} setView={setView}/>}
         {view==="help"&&<HelpView/>}
         {view==="admin"&&<AdminView ctx={ctx}/>}
       </main>
@@ -3066,6 +3067,8 @@ async function saveRankingSnapshot(participants, predictions, matchResults, koPr
 // ─── OFFICIËLE GROEPSSTAND ────────────────────────────────────────────────────
 function calcOfficieleStand(grp, teams, matchResults) {
   const stand = teams.map(t=>({name:t.name,pts:0,gv:0,gt:0,saldo:0,gespeeld:0,wins:0,disc:0}));
+  // Sla onderlinge uitslagen apart op voor tiebreaker
+  const onderling = {}; // "TeamA|TeamB" -> {ptsA, ptsB, saldoA, gvA}
   teams.forEach((t1,i)=>teams.slice(i+1).forEach((t2,j)=>{
     const mid=getMatchId(grp,t1.name,t2.name);
     const r=matchResults[mid];
@@ -3076,9 +3079,30 @@ function calcOfficieleStand(grp, teams, matchResults) {
     if(!s1||!s2) return;
     s1.gv+=h;s1.gt+=a;s1.saldo+=h-a;s1.gespeeld++;
     s2.gv+=a;s2.gt+=h;s2.saldo+=a-h;s2.gespeeld++;
-    if(h>a){s1.pts+=3;s1.wins++;}else if(h<a){s2.pts+=3;s2.wins++;}else{s1.pts+=1;s2.pts+=1;}
+    let ptsA=0, ptsB=0;
+    if(h>a){s1.pts+=3;s1.wins++;ptsA=3;}else if(h<a){s2.pts+=3;s2.wins++;ptsB=3;}else{s1.pts+=1;s2.pts+=1;ptsA=1;ptsB=1;}
+    onderling[`${t1.name}|${t2.name}`] = {ptsA, ptsB, saldoA:h-a, gvA:h};
+    onderling[`${t2.name}|${t1.name}`] = {ptsA:ptsB, ptsB:ptsA, saldoA:a-h, gvA:a};
   }));
-  return stand.sort((a,b)=>b.pts-a.pts||b.saldo-a.saldo||b.gv-a.gv||b.wins-a.wins);
+
+  // Onderling resultaat tiebreaker: alleen toepasbaar bij precies 2 teams gelijk
+  function onderlingVergelijk(a, b){
+    const key = `${a.name}|${b.name}`;
+    const m = onderling[key];
+    if(!m) return 0; // nog niet gespeeld tegen elkaar
+    if(m.ptsA !== m.ptsB) return m.ptsB - m.ptsA; // meer onderlinge punten = beter (lager getal = eerder in sort)
+    if(m.saldoA !== 0) return -m.saldoA; // beter onderling doelsaldo
+    return -m.gvA; // meer onderlinge doelpunten voor
+  }
+
+  return stand.sort((a,b)=>{
+    if(b.pts!==a.pts) return b.pts-a.pts;
+    if(b.saldo!==a.saldo) return b.saldo-a.saldo;
+    if(b.gv!==a.gv) return b.gv-a.gv;
+    if(b.wins!==a.wins) return b.wins-a.wins;
+    // Volledig gelijk op alle teamstatistieken → check onderling resultaat
+    return onderlingVergelijk(a,b);
+  });
 }
 
 function calcBesteDerdes(matchResults) {
@@ -3341,7 +3365,7 @@ function PredictieUitklap({predRows,t1,t2,hasResult,mid,isKO=false,KO_EXACT_PTS=
   );
 }
 
-function DagProgrammaView({ctx}){
+function DagProgrammaView({ctx, setView}){
   const dp=deadlinePassed();
 
   // Build combined date map: group matches + KO matches
@@ -3529,10 +3553,58 @@ function DagProgrammaView({ctx}){
           <BesteDerdesStand matchResults={ctx.matchResults}/>
         </div>
       )}
+
+      {/* Link naar alle standen */}
+      {Object.keys(ctx.matchResults).length>0&&(
+        <div style={{textAlign:"center",marginTop:20}}>
+          <button onClick={()=>setView("alle-standen")} style={{...S.btn("green"),padding:"10px 20px"}}>
+            📊 Bekijk alle standen van alle groepen →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
+
+
+// ─── ALLE STANDEN PAGINA ──────────────────────────────────────────────────────
+function AlleStandenView({ctx, setView}){
+  const C = COLORS;
+  const nr3Quals = calcBesteDerdes(ctx.matchResults).slice(0,8).map(t=>t.name);
+
+  return(
+    <div>
+      <div style={{...S.card,paddingBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+          <div>
+            <h2 style={{...S.h2,marginBottom:4}}>📊 Alle standen</h2>
+            <p style={{fontSize:13,color:C.gray,margin:0}}>Volledig overzicht van alle 12 groepen + de stand van de beste nummers 3.</p>
+          </div>
+          <button onClick={()=>setView("dagprogramma")} style={{...S.btn(),fontSize:13}}>
+            ← Terug naar Programma
+          </button>
+        </div>
+      </div>
+
+      {/* Beste nummers 3 — boven aan, want bepaalt doorstoot */}
+      {calcBesteDerdes(ctx.matchResults).length>=1&&(
+        <div style={{marginBottom:16}}>
+          <BesteDerdesStand matchResults={ctx.matchResults}/>
+        </div>
+      )}
+
+      {/* Alle 12 groepen in een grid */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:14}}>
+        {Object.entries(WK_GROUPS).map(([grp,teams])=>(
+          <div key={grp}>
+            <OfficieleGroepsstandMini grp={grp} teams={teams} matchResults={ctx.matchResults} nr3Qualifiers={nr3Quals}/>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // ─── ADMIN INSTELLINGEN ───────────────────────────────────────────────────────
 function AdminInstellingen({ctx}){

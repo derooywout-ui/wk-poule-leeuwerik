@@ -2327,11 +2327,12 @@ function PredictView({ctx}){
 function RankingLijngrafiek({participantId, rankingSnapshot}){
   const chartId = `ranking_chart_${participantId}`.replace(/[^a-zA-Z0-9_]/g,"_");
 
-  // Bouw datapunten: per unieke speeldatum de rang van deze deelnemer
+  // Bouw datapunten: per unieke speeldatum de LAATSTE rang van die dag
+  // (= eindstand van die speeldag, consistent met hoe de officiële stand ook werkt:
+  // je kijkt naar waar je aan het eind van de dag staat, niet naar tussentijdse pieken)
   const mySnaps = rankingSnapshot
     .filter(r=>r.participant_id===participantId && r.speeldatum)
     .reduce((acc,r)=>{
-      // Per speeldatum alleen de laatste snapshot (created_at hoogste)
       if(!acc[r.speeldatum] || new Date(r.created_at) > new Date(acc[r.speeldatum].created_at)){
         acc[r.speeldatum] = r;
       }
@@ -2381,6 +2382,9 @@ function RankingLijngrafiek({participantId, rankingSnapshot}){
         data.push(punt?punt.rank:null);
       }
 
+      // Y-as min iets onder 1 zodat een #1-positie niet tegen de bovenrand plakt
+      const yMin = -0.5;
+
       const isDark=matchMedia("(prefers-color-scheme: dark)").matches;
       const lineColor=isDark?"#5DCAA5":"#0F6E56";
       const fillColor=isDark?"rgba(93,202,165,0.12)":"rgba(15,110,86,0.08)";
@@ -2418,8 +2422,9 @@ function RankingLijngrafiek({participantId, rankingSnapshot}){
           },
           scales:{
             y:{
-              reverse:true,min:1,
-              ticks:{stepSize:1,color:textColor,font:{size:11},callback:v=>"#"+v},
+              reverse:true,min:yMin,
+              ticks:{stepSize:1,color:textColor,font:{size:11},
+                callback:v=>(v<1||v%1!==0)?"":"#"+v},
               grid:{color:gridColor},border:{display:false},
               title:{display:true,text:"Positie in klassement",color:textColor,font:{size:11}},
             },
@@ -2442,6 +2447,9 @@ function RankingLijngrafiek({participantId, rankingSnapshot}){
     <div style={{marginTop:10,padding:"12px 14px",borderTop:`1px solid ${COLORS.border}`}}>
       <div style={{position:"relative",width:"100%",height:180}}>
         <canvas id={chartId} role="img" aria-label="Lijngrafiek van klassementspositie door het WK heen"/>
+      </div>
+      <div style={{fontSize:10,color:COLORS.gray,marginTop:6,textAlign:"center"}}>
+        Toont de eindstand per speeldag. Hoogste/laagste ooit hierboven kunnen een tussentijds moment zijn dat niet in deze grafiek zichtbaar is.
       </div>
     </div>
   );
@@ -2529,9 +2537,10 @@ function DeelnemerOverlay({p, ctx, onClose}){
     if(v){const q=ctx.bonusQuestions.find(bq=>String(bq.idx)===String(qi));ptsBonusTotal+=(q?.points??20);}
   });
 
-  // Hoogste en laagste stand uit rankingSnapshot (matches_played >= 1)
-  // Hoogste en laagste stand — simpelweg min/max over alle snapshots met matches_played >= 1
-  // Dubbele rijen per batch hebben toch dezelfde rank, dus deduplicatie is niet nodig
+  // Hoogste en laagste stand — consistent met de grafiek: alle ruwe snapshots
+  // met matches_played >= 1, want de grafiek dedupliceert per dag en kan daardoor
+  // een tussentijdse piek/dal binnen één dag missen. Hier pakken we het echte
+  // min/max over ALLE momentopnamen, niet alleen de laatste van elke dag.
   const allMySnaps=ctx.rankingSnapshot.filter(r=>r.participant_id===p.id&&(r.matches_played??0)>=1);
   const hoogsteStand=allMySnaps.length>0?Math.min(...allMySnaps.map(r=>r.rank)):null;
   const laagsteStand=allMySnaps.length>0?Math.max(...allMySnaps.map(r=>r.rank)):null;

@@ -2411,6 +2411,20 @@ function DeelnemerOverlay({p, ctx, onClose}){
   const hoogsteStand=allMySnaps.length>0?Math.min(...allMySnaps.map(r=>r.rank)):null;
   const laagsteStand=allMySnaps.length>0?Math.max(...allMySnaps.map(r=>r.rank)):null;
 
+  // Doorstoot detail: welke landen voorspelde deze deelnemer als doorgestoten,
+  // en heeft dat land daadwerkelijk punten opgeleverd (staat in doorstoot_landen)?
+  const predAdvDeelnemer = calcDoorstootFromPredictions(pred);
+  const doorstootDetail = predAdvDeelnemer.map(nlNaam=>{
+    const enNaam = NL_TO_EN_ALIAS[nlNaam] || nlNaam.toLowerCase();
+    const isDoorgestoten = ctx.doorstootLanden && ctx.doorstootLanden.includes(enNaam);
+    return { naam: nlNaam, doorgestoten: isDoorgestoten };
+  }).sort((a,b)=>{
+    // Doorgestoten landen eerst, dan alfabetisch
+    if(a.doorgestoten!==b.doorgestoten) return a.doorgestoten?-1:1;
+    return a.naam.localeCompare(b.naam,"nl");
+  });
+  const doorstootPuntenTotaal = doorstootDetail.filter(d=>d.doorgestoten).length * DOORSTOOT_PTS;
+
   // Sluit bij klik buiten overlay
   function handleBackdrop(e){if(e.target===e.currentTarget)onClose();}
 
@@ -2447,12 +2461,13 @@ function DeelnemerOverlay({p, ctx, onClose}){
               {[
                 {label:"Gespeelde wedstrijden",val:played.length+ctx.koMatches.filter(m=>m.home_goals!==null&&m.home_goals!==undefined).length,icon:"⚽"},
                 {label:"Punten groepsfase",val:ptsGroep,icon:"⭐"},
+                {label:"Punten doorstoot",val:doorstootPuntenTotaal,icon:"🏆"},
                 {label:"Punten KO fase",val:ptsKO,icon:"⚡"},
                 {label:"Punten bonusvragen",val:ptsBonusTotal,icon:"🎁"},
               ].map((item,i)=>(
                 <div key={i} style={{
                   padding:"12px 14px",display:"flex",alignItems:"center",gap:10,
-                  borderBottom:i<2?`1px solid ${C.border}`:"none",
+                  borderBottom:i<3?`1px solid ${C.border}`:"none",
                   borderRight:i%2===0?`1px solid ${C.border}`:"none",
                 }}>
                   <span style={{fontSize:18,flexShrink:0}}>{item.icon}</span>
@@ -2521,6 +2536,31 @@ function DeelnemerOverlay({p, ctx, onClose}){
                 );
               })}
             </div>
+          )}
+
+          {/* Doorstoot detail */}
+          {doorstootDetail.length>0&&(
+            <>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                <span style={{fontWeight:700,fontSize:13,color:C.gray,textTransform:"uppercase",letterSpacing:0.5}}>🏆 Doorstoot voorspelling</span>
+                <span style={{fontSize:12,fontWeight:700,color:C.green}}>{doorstootPuntenTotaal} pt totaal</span>
+              </div>
+              <div style={{marginBottom:16}}>
+                {doorstootDetail.map(({naam,doorgestoten})=>(
+                  <div key={naam} style={{
+                    display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:7,marginBottom:4,
+                    background:doorgestoten?"#e8f5ee":"#f7f7f7",
+                    border:`1px solid ${doorgestoten?"#b2dfdb":"#e0e0e0"}`,
+                  }}>
+                    <FlagImg name={naam} size={16}/>
+                    <span style={{flex:1,fontSize:13,fontWeight:600,color:doorgestoten?C.dark:C.gray}}>{naam}</span>
+                    <span style={{fontSize:12,fontWeight:700,color:doorgestoten?C.green:C.gray}}>
+                      {doorgestoten?`✅ +${DOORSTOOT_PTS}pt`:"⏳ nog niet"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
 
           {/* Gespeelde wedstrijden */}

@@ -134,7 +134,7 @@ const MATCH_SCHEDULE = {
   "C-Marokko-Haïti":{date:"25 jun",time:"00:00",city:"Atlanta"},
   "D-VS-Paraguay":{date:"13 jun",time:"03:00",city:"Los Angeles"},
   "D-Australië-Turkije":{date:"14 jun",time:"06:00",city:"Vancouver"},
-  "D-Turkije-Paraguay":{date:"20 jun",time:"06:00",city:"San Francisco"},
+  "D-Paraguay-Turkije":{date:"20 jun",time:"06:00",city:"San Francisco"},
   "D-VS-Australië":{date:"19 jun",time:"21:00",city:"Seattle"},
   "D-VS-Turkije":{date:"26 jun",time:"04:00",city:"Los Angeles"},
   "D-Paraguay-Australië":{date:"26 jun",time:"04:00",city:"San Francisco"},
@@ -2872,8 +2872,8 @@ const SPEELRONDE_MAP = {
   "C-Brazilië-Schotland":3, "C-Marokko-Haïti":3,
   // Groep D
   "D-VS-Paraguay":1, "D-Australië-Turkije":1,
-  "D-Turkije-Paraguay":2, "D-VS-Australië":2,
-  "D-Turkije-VS":3, "D-Paraguay-Australië":3,
+  "D-Paraguay-Turkije":2, "D-VS-Australië":2,
+  "D-VS-Turkije":3, "D-Paraguay-Australië":3,
   // Groep E
   "E-Duitsland-Curaçao":1, "E-Ivoorkust-Ecuador":1,
   "E-Duitsland-Ivoorkust":2, "E-Curaçao-Ecuador":2,

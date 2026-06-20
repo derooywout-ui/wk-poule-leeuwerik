@@ -2347,17 +2347,28 @@ function PredictView({ctx}){
 function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
   const chartId = `ranking_chart_${participantId}`.replace(/[^a-zA-Z0-9_]/g,"_");
 
-  // Elk snapshot-moment is een eigen datapunt (geen deduplicatie per dag),
-  // geplot op een vaste WK-brede tijdas (11 juni t/m 19 juli) zodat de lijn
-  // visueel altijd evenveel ruimte inneemt en je ziet hoeveel WK nog te gaan is.
-  const wkStart = new Date(2026,5,11).getTime();
-  const wkEind = new Date(2026,6,19).getTime();
-  const totaalMs = wkEind - wkStart;
+  // Per matches_played-waarde (= per gespeelde wedstrijd, consistent met de
+  // trend-pijl ↑/↓ in het klassement) nemen we de BESTE rang die op dat moment
+  // is bereikt — dit voorkomt dat tussentijdse handmatige correcties of extra
+  // Apps Script runs een vertekend beeld geven, en houdt de grafiek consistent
+  // met hoogste/laagste-ooit hierboven.
+  const perWedstrijd = rankingSnapshot
+    .filter(r=>r.participant_id===participantId && (r.matches_played??0)>0)
+    .reduce((acc,r)=>{
+      const mp=r.matches_played;
+      if(!acc[mp] || r.rank<acc[mp].rank) acc[mp]=r;
+      return acc;
+    },{});
+  const dataPunten = Object.values(perWedstrijd).sort((a,b)=>a.matches_played-b.matches_played);
 
-  const dataPunten = rankingSnapshot
-    .filter(r=>r.participant_id===participantId && r.matches_played>0)
-    .map(r=>({...r, ts:new Date(r.created_at).getTime()}))
-    .sort((a,b)=>a.ts-b.ts);
+  // Voor de tijdas: gebruik de speeldatum (of created_at als fallback) van elk punt
+  function tsVan(p){
+    if(p.speeldatum){
+      const [j,m,d]=p.speeldatum.split("-").map(Number);
+      return new Date(j,m-1,d).getTime();
+    }
+    return new Date(p.created_at).getTime();
+  }
 
   React.useEffect(()=>{
     if(!window.Chart){
@@ -2386,6 +2397,9 @@ function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
       const canvas = document.getElementById(chartId);
       if(!canvas) return;
 
+      const wkStart = new Date(2026,5,11).getTime();
+      const wkEind = new Date(2026,6,19).getTime();
+
       const maanden=["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"];
       function fmtDate(ts){
         const d=new Date(ts);
@@ -2401,9 +2415,7 @@ function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
       const yMin = -Math.max(1, Math.round(totaalDeelnemers*0.03));
       const yMax = totaalDeelnemers;
 
-      // x = werkelijk tijdstip (ms), zodat Chart.js de punten proportioneel plaatst
-      // over de volledige WK-periode — geen data na het laatste punt
-      const chartData = dataPunten.map(p=>({x:p.ts, y:p.rank}));
+      const chartData = dataPunten.map(p=>({x:tsVan(p), y:p.rank}));
 
       const chart=new window.Chart(canvas,{
         type:"line",
@@ -2473,7 +2485,7 @@ function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
   return(
     <div style={{marginTop:10,padding:"12px 14px",borderTop:`1px solid ${COLORS.border}`}}>
       <div style={{position:"relative",width:"100%",height:180}}>
-        <canvas id={chartId} role="img" aria-label="Lijngrafiek van klassementspositie door het WK heen, x-as loopt over de hele WK periode"/>
+        <canvas id={chartId} role="img" aria-label="Lijngrafiek van klassementspositie door het WK heen, één punt per gespeelde wedstrijd"/>
       </div>
     </div>
   );

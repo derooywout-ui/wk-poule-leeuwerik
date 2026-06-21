@@ -1732,6 +1732,196 @@ function HomeView({setView,ctx}){
                 </div>
               </div>
             )}
+
+            {/* ── Vandaag opvallend (deterministisch, per dag wisselend) ── */}
+            {(()=>{
+              const C2=COLORS;
+              const vandaag = new Date().toDateString();
+
+              // Helper: deterministische "random" op basis van een seed-string,
+              // zodat de selectie elke dag anders is maar binnen 1 dag stabiel blijft
+              function seedHash(str){
+                let h=0;
+                for(let i=0;i<str.length;i++){ h=((h<<5)-h+str.charCodeAt(i))|0; }
+                return Math.abs(h);
+              }
+
+              const kandidaten=[];
+
+              // ── Detector 1: Langste win-/foutreeks (toto) per deelnemer ──
+              (()=>{
+                const months={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
+                function matchDt(mid){
+                  const s=MATCH_SCHEDULE[mid];if(!s)return new Date(2099,0,1);
+                  const[d,mo]=s.date.split(" ");const[h,m]=s.time.split(":");
+                  return new Date(2026,months[mo],parseInt(d),parseInt(h),parseInt(m));
+                }
+                const gespeeldeMids=Object.keys(ctx.matchResults)
+                  .filter(mid=>ctx.matchResults[mid]&&ctx.matchResults[mid].home!==null)
+                  .sort((a,b)=>matchDt(a)-matchDt(b));
+
+                let besteStreak={naam:null,lengte:0,type:null};
+                ctx.participants.forEach(p=>{
+                  const pred=ctx.predictions[p.id]||{};
+                  let streak=0,maxStreak=0;
+                  gespeeldeMids.forEach(mid=>{
+                    const pp=pred[mid];const r=ctx.matchResults[mid];
+                    if(!pp||pp.home===undefined||pp.home===null){streak=0;return;}
+                    const toto=calcToto(pp.home,pp.away)===calcToto(r.home,r.away);
+                    if(toto){streak++;maxStreak=Math.max(maxStreak,streak);}else{streak=0;}
+                  });
+                  if(maxStreak>besteStreak.lengte){
+                    besteStreak={naam:`${p.first_name} ${p.last_name}`,lengte:maxStreak,type:"toto"};
+                  }
+                });
+                if(besteStreak.lengte>=4){
+                  kandidaten.push({
+                    icon:"🔥",
+                    tekst:<><strong>{besteStreak.naam}</strong> heeft <strong>{besteStreak.lengte}</strong> wedstrijden op rij de juiste toto voorspeld!</>,
+                    prioriteit:besteStreak.lengte,
+                  });
+                }
+              })();
+
+              // ── Detector 2: Grootste stijger/daler ooit in 1 dag ──
+              (()=>{
+                const perDeelnemerPerDag={};
+                ctx.rankingSnapshot.forEach(r=>{
+                  if(!r.speeldatum) return;
+                  const key=`${r.participant_id}|${r.speeldatum}`;
+                  if(!perDeelnemerPerDag[key]) perDeelnemerPerDag[key]={min:r.rank,max:r.rank};
+                  perDeelnemerPerDag[key].min=Math.min(perDeelnemerPerDag[key].min,r.rank);
+                  perDeelnemerPerDag[key].max=Math.max(perDeelnemerPerDag[key].max,r.rank);
+                });
+                let grootsteSprong={naam:null,verschil:0,datum:null};
+                Object.entries(perDeelnemerPerDag).forEach(([key,{min,max}])=>{
+                  const verschil=max-min;
+                  if(verschil>grootsteSprong.verschil){
+                    const[pid,datum]=key.split("|");
+                    const p=ctx.participants.find(pp=>pp.id===pid);
+                    if(p) grootsteSprong={naam:`${p.first_name} ${p.last_name}`,verschil,datum};
+                  }
+                });
+                if(grootsteSprong.verschil>=10){
+                  kandidaten.push({
+                    icon:"🚀",
+                    tekst:<><strong>{grootsteSprong.naam}</strong> steeg op één dag maar liefst <strong>{grootsteSprong.verschil}</strong> plekken in het klassement!</>,
+                    prioriteit:grootsteSprong.verschil,
+                  });
+                }
+              })();
+
+              // ── Detector 3: Meest voorspelde kampioen (bonusvraag idx=4) ──
+              (()=>{
+                const kampioenAntwoorden=Object.entries(ctx.bonusAnswers)
+                  .map(([pid,answers])=>answers[4])
+                  .filter(Boolean);
+                if(kampioenAntwoorden.length<5) return;
+
+                const freq={};
+                kampioenAntwoorden.forEach(ans=>{
+                  const genNaam=Object.keys(NL_TO_EN_ALIAS).find(nl=>
+                    ans.toLowerCase().trim().includes(nl.toLowerCase()) ||
+                    nl.toLowerCase().includes(ans.toLowerCase().trim())
+                  );
+                  if(genNaam) freq[genNaam]=(freq[genNaam]||0)+1;
+                });
+                const top=Object.entries(freq).sort((a,b)=>b[1]-a[1])[0];
+                if(top){
+                  const[land,aantal]=top;
+                  const pct=Math.round(aantal/kampioenAntwoorden.length*100);
+                  kandidaten.push({
+                    icon:"🏆",
+                    tekst:<><strong>{land}</strong> is de populairste favoriet voor de wereldtitel — <strong>{pct}%</strong> van de deelnemers voorspelt deze winnaar.</>,
+                    prioriteit:pct,
+                  });
+                }
+              })();
+
+              // ── Detector 4: Perfecte dag (alle wedstrijden van 1 dag goed) ──
+              (()=>{
+                const months={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
+                const perDag={};
+                Object.entries(MATCH_SCHEDULE).forEach(([mid,sch])=>{
+                  if(!perDag[sch.date]) perDag[sch.date]=[];
+                  perDag[sch.date].push(mid);
+                });
+                let perfecteDagen=[];
+                Object.entries(perDag).forEach(([datum,mids])=>{
+                  const gespeeld=mids.filter(mid=>ctx.matchResults[mid]&&ctx.matchResults[mid].home!==null);
+                  if(gespeeld.length<2) return;
+                  ctx.participants.forEach(p=>{
+                    const pred=ctx.predictions[p.id]||{};
+                    const alleGoed=gespeeld.every(mid=>{
+                      const pp=pred[mid];const r=ctx.matchResults[mid];
+                      if(!pp||pp.home===undefined||pp.home===null) return false;
+                      return calcToto(pp.home,pp.away)===calcToto(r.home,r.away);
+                    });
+                    if(alleGoed) perfecteDagen.push({naam:`${p.first_name} ${p.last_name}`,datum,aantal:gespeeld.length});
+                  });
+                });
+                if(perfecteDagen.length>0){
+                  // Pak de dag met het hoogste aantal wedstrijden (meest indrukwekkend)
+                  perfecteDagen.sort((a,b)=>b.aantal-a.aantal);
+                  const beste=perfecteDagen[0];
+                  kandidaten.push({
+                    icon:"💯",
+                    tekst:<><strong>{beste.naam}</strong> had op <strong>{beste.datum}</strong> alle <strong>{beste.aantal}</strong> wedstrijden goed (toto)!</>,
+                    prioriteit:beste.aantal*3,
+                  });
+                }
+              })();
+
+              // ── Detector 5: Meest voorspelde 0-0 uitslag ──
+              (()=>{
+                let beste={naam:null,aantal:0};
+                ctx.participants.forEach(p=>{
+                  const pred=ctx.predictions[p.id]||{};
+                  const aantalNulNul=Object.values(pred).filter(pp=>
+                    pp&&parseInt(pp.home)===0&&parseInt(pp.away)===0
+                  ).length;
+                  if(aantalNulNul>beste.aantal){
+                    beste={naam:`${p.first_name} ${p.last_name}`,aantal:aantalNulNul};
+                  }
+                });
+                if(beste.aantal>=5){
+                  kandidaten.push({
+                    icon:"😴",
+                    tekst:<><strong>{beste.naam}</strong> voorspelde maar liefst <strong>{beste.aantal}×</strong> een 0-0 — de voorzichtige aanpak!</>,
+                    prioriteit:beste.aantal,
+                  });
+                }
+              })();
+
+              if(kandidaten.length===0) return null;
+
+              // Deterministische dagelijkse selectie: seed op vandaag's datum,
+              // sorteer kandidaten op (prioriteit + dag-specifieke shuffle-component)
+              const seed=seedHash(vandaag);
+              const top3=kandidaten
+                .map((k,i)=>({...k, sortKey: k.prioriteit*1000 + ((seed+i*37)%97)}))
+                .sort((a,b)=>b.sortKey-a.sortKey)
+                .slice(0,3);
+
+              return(
+                <div style={{marginTop:20,paddingTop:16,borderTop:`1px solid ${C2.border}`}}>
+                  <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:10}}>
+                    <span style={{fontSize:12,fontWeight:700,color:C2.gray,textTransform:"uppercase",letterSpacing:0.5}}>Vandaag opvallend</span>
+                    <Tooltip text="Een dagelijks wisselende selectie van bijzondere feiten uit de poule — gebaseerd op records, voorspelpatronen en prestaties. Verandert elke kalenderdag."/>
+                  </div>
+                  {top3.map((k,i)=>(
+                    <div key={i} style={{
+                      display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",
+                      borderRadius:8,marginBottom:8,background:"#f9fffe",
+                      border:`1px solid ${C2.border}`,
+                    }}>
+                      <span style={{fontSize:18,flexShrink:0}}>{k.icon}</span>
+                      <span style={{fontSize:13,color:C2.dark,lineHeight:1.5}}>{k.tekst}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         );
       })()}

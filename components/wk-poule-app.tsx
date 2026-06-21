@@ -1778,7 +1778,7 @@ function HomeView({setView,ctx}){
                   kandidaten.push({
                     icon:"🔥",
                     tekst:<><strong>{besteStreak.naam}</strong> heeft <strong>{besteStreak.lengte}</strong> wedstrijden op rij de juiste toto voorspeld!</>,
-                    prioriteit:besteStreak.lengte,
+                    prioriteit:Math.min(10, besteStreak.lengte*2),
                   });
                 }
               })();
@@ -1806,7 +1806,7 @@ function HomeView({setView,ctx}){
                   kandidaten.push({
                     icon:"🚀",
                     tekst:<><strong>{grootsteSprong.naam}</strong> steeg op één dag maar liefst <strong>{grootsteSprong.verschil}</strong> plekken in het klassement!</>,
-                    prioriteit:grootsteSprong.verschil,
+                    prioriteit:Math.min(10, 3 + grootsteSprong.verschil/8),
                   });
                 }
               })();
@@ -1833,7 +1833,7 @@ function HomeView({setView,ctx}){
                   kandidaten.push({
                     icon:"🏆",
                     tekst:<><strong>{land}</strong> is de populairste favoriet voor de wereldtitel — <strong>{pct}%</strong> van de deelnemers voorspelt deze winnaar.</>,
-                    prioriteit:pct,
+                    prioriteit:Math.min(10, pct/10),
                   });
                 }
               })();
@@ -1867,7 +1867,7 @@ function HomeView({setView,ctx}){
                   kandidaten.push({
                     icon:"💯",
                     tekst:<><strong>{beste.naam}</strong> had op <strong>{beste.datum}</strong> alle <strong>{beste.aantal}</strong> wedstrijden goed (toto)!</>,
-                    prioriteit:beste.aantal*3,
+                    prioriteit:Math.min(10, 2 + beste.aantal*1.5),
                   });
                 }
               })();
@@ -1913,7 +1913,7 @@ function HomeView({setView,ctx}){
                   kandidaten.push({
                     icon:"🤔",
                     tekst:<>Niemand voorspelt <strong>{land}</strong> als wereldkampioen, maar <strong>{aantal}</strong> deelnemers zien het land wel als groepswinnaar!</>,
-                    prioriteit:aantal*2,
+                    prioriteit:Math.min(10, 3 + aantal/4),
                   });
                 }
               })();

@@ -1774,7 +1774,7 @@ function HomeView({setView,ctx}){
                     besteStreak={naam:`${p.first_name} ${p.last_name}`,lengte:maxStreak,type:"toto"};
                   }
                 });
-                if(besteStreak.lengte>=4){
+                if(besteStreak.lengte>=2){
                   kandidaten.push({
                     icon:"🔥",
                     tekst:<><strong>{besteStreak.naam}</strong> heeft <strong>{besteStreak.lengte}</strong> wedstrijden op rij de juiste toto voorspeld!</>,
@@ -1849,7 +1849,7 @@ function HomeView({setView,ctx}){
                 let perfecteDagen=[];
                 Object.entries(perDag).forEach(([datum,mids])=>{
                   const gespeeld=mids.filter(mid=>ctx.matchResults[mid]&&ctx.matchResults[mid].home!==null);
-                  if(gespeeld.length<2) return;
+                  if(gespeeld.length<1) return;
                   ctx.participants.forEach(p=>{
                     const pred=ctx.predictions[p.id]||{};
                     const alleGoed=gespeeld.every(mid=>{
@@ -1872,23 +1872,48 @@ function HomeView({setView,ctx}){
                 }
               })();
 
-              // ── Detector 5: Meest voorspelde 0-0 uitslag ──
+              // ── Detector 5: Kampioen-voorspelling vs groepswinnaar-discrepantie ──
+              // "Niemand voorspelt land X als kampioen, maar wel als groepswinnaar"
               (()=>{
-                let beste={naam:null,aantal:0};
+                const kampioenAntwoorden=Object.entries(ctx.bonusAnswers)
+                  .map(([pid,answers])=>answers[4])
+                  .filter(Boolean);
+                if(kampioenAntwoorden.length<5) return;
+
+                // Genormaliseerde set van voorspelde kampioenen
+                const kampioenenSet=new Set();
+                kampioenAntwoorden.forEach(ans=>{
+                  const genNaam=Object.keys(NL_TO_EN_ALIAS).find(nl=>
+                    ans.toLowerCase().trim().includes(nl.toLowerCase()) ||
+                    nl.toLowerCase().includes(ans.toLowerCase().trim())
+                  );
+                  if(genNaam) kampioenenSet.add(genNaam);
+                });
+
+                // Tel hoe vaak elk land als groepswinnaar (1e plek) wordt voorspeld
+                const groepswinnaarFreq={};
                 ctx.participants.forEach(p=>{
                   const pred=ctx.predictions[p.id]||{};
-                  const aantalNulNul=Object.values(pred).filter(pp=>
-                    pp&&parseInt(pp.home)===0&&parseInt(pp.away)===0
-                  ).length;
-                  if(aantalNulNul>beste.aantal){
-                    beste={naam:`${p.first_name} ${p.last_name}`,aantal:aantalNulNul};
-                  }
+                  Object.entries(WK_GROUPS).forEach(([grp,teams])=>{
+                    const stand=calcGroepsstandFromPred(grp,teams,pred);
+                    if(stand[0]&&stand[0].gespeeld>0){
+                      groepswinnaarFreq[stand[0].name]=(groepswinnaarFreq[stand[0].name]||0)+1;
+                    }
+                  });
                 });
-                if(beste.aantal>=5){
+
+                // Zoek het land met de GROOTSTE discrepantie: vaak groepswinnaar,
+                // maar door niemand als kampioen voorspeld
+                const kandidatenLanden=Object.entries(groepswinnaarFreq)
+                  .filter(([land])=>!kampioenenSet.has(land))
+                  .sort((a,b)=>b[1]-a[1]);
+
+                if(kandidatenLanden.length>0 && kandidatenLanden[0][1]>=3){
+                  const[land,aantal]=kandidatenLanden[0];
                   kandidaten.push({
-                    icon:"😴",
-                    tekst:<><strong>{beste.naam}</strong> voorspelde maar liefst <strong>{beste.aantal}×</strong> een 0-0 — de voorzichtige aanpak!</>,
-                    prioriteit:beste.aantal,
+                    icon:"🤔",
+                    tekst:<>Niemand voorspelt <strong>{land}</strong> als wereldkampioen, maar <strong>{aantal}</strong> deelnemers zien het land wel als groepswinnaar!</>,
+                    prioriteit:aantal*2,
                   });
                 }
               })();
@@ -1906,7 +1931,7 @@ function HomeView({setView,ctx}){
               return(
                 <div style={{marginTop:20,paddingTop:16,borderTop:`1px solid ${C2.border}`}}>
                   <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:10}}>
-                    <span style={{fontSize:12,fontWeight:700,color:C2.gray,textTransform:"uppercase",letterSpacing:0.5}}>Vandaag opvallend</span>
+                    <span style={{fontSize:12,fontWeight:700,color:C2.gray,textTransform:"uppercase",letterSpacing:0.5}}>Insights van Louis</span>
                     <Tooltip text="Een dagelijks wisselende selectie van bijzondere feiten uit de poule — gebaseerd op records, voorspelpatronen en prestaties. Verandert elke kalenderdag."/>
                   </div>
                   {top3.map((k,i)=>(

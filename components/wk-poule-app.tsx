@@ -4385,6 +4385,49 @@ function AdminResults({ctx}){
   );
 }
 
+
+// ─── KO BRACKET POULE-AANDUIDINGEN ───────────────────────────────────────────
+// Gebaseerd op het officiële FIFA-schema (kruisbevestigd via FIFA.com, NBC,
+// CBS, Sky Sports, MLSSoccer). Toont wie tegen wie speelt vóórdat de
+// daadwerkelijke landen bekend zijn (bijv. "Winnaar E" i.p.v. een blanco veld).
+const KO_BRACKET_AANDUIDINGEN = {
+  r16: {
+    1:["Tweede A","Tweede B"], 2:["Winnaar E","Derde A/B/C/D/F"],
+    3:["Winnaar F","Tweede C"], 4:["Winnaar C","Tweede F"],
+    5:["Winnaar I","Derde C/D/F/G/H"], 6:["Tweede E","Tweede I"],
+    7:["Mexico","Derde C/E/F/H/I"], 8:["Winnaar L","Derde E/H/I/J/K"],
+    9:["Winnaar D","Derde B/E/F/I/J"], 10:["Winnaar G","Derde A/E/H/I/J"],
+    11:["Tweede K","Tweede L"], 12:["Winnaar H","Tweede J"],
+    13:["Winnaar B","Derde E/F/G/I/J"], 14:["Winnaar J","Tweede H"],
+    15:["Winnaar K","Derde D/E/I/J/L"], 16:["Tweede D","Tweede G"],
+  },
+  r8: {
+    1:["Winnaar 1/16 #2","Winnaar 1/16 #5"], 2:["Winnaar 1/16 #1","Winnaar 1/16 #3"],
+    3:["Winnaar 1/16 #4","Winnaar 1/16 #6"], 4:["Winnaar 1/16 #7","Winnaar 1/16 #8"],
+    5:["Winnaar 1/16 #11","Winnaar 1/16 #12"], 6:["Winnaar 1/16 #9","Winnaar 1/16 #10"],
+    7:["Winnaar 1/16 #14","Winnaar 1/16 #16"], 8:["Winnaar 1/16 #13","Winnaar 1/16 #15"],
+  },
+  r4: {
+    1:["Winnaar 1/8 #1","Winnaar 1/8 #2"], 2:["Winnaar 1/8 #5","Winnaar 1/8 #6"],
+    3:["Winnaar 1/8 #3","Winnaar 1/8 #4"], 4:["Winnaar 1/8 #7","Winnaar 1/8 #8"],
+  },
+  r2: {
+    1:["Winnaar Kwart #1","Winnaar Kwart #2"], 2:["Winnaar Kwart #3","Winnaar Kwart #4"],
+  },
+  r3: {
+    1:["Verliezer Halve #1","Verliezer Halve #2"],
+  },
+  r1: {
+    1:["Winnaar Halve #1","Winnaar Halve #2"],
+  },
+};
+
+function getKOAanduiding(roundId, matchNum, isHome){
+  const r = KO_BRACKET_AANDUIDINGEN[roundId];
+  if(!r || !r[matchNum]) return isHome ? "Thuisland invoeren…" : "Uitland invoeren…";
+  return r[matchNum][isHome?0:1];
+}
+
 function AdminKO({ctx}){
   const [saving,setSaving]=useState(false);
   const [saved,setSaved]=useState(false);
@@ -4464,16 +4507,20 @@ function AdminKO({ctx}){
                 <div style={{display:"grid",gridTemplateColumns:"1fr auto auto auto 1fr auto",alignItems:"center",gap:8}}>
                   <div style={{display:"flex",flexDirection:"column",gap:3}}>
                     <input style={{...S.input,fontSize:12,padding:"5px 8px"}} value={match.home_team||""}
-                      onChange={e=>setResult(match.id,"home_team",e.target.value)} placeholder="Thuisland invoeren…"/>
-                    {match.home_team&&<div style={{display:"flex",alignItems:"center",gap:4,fontSize:12}}><FlagImg name={match.home_team} size={14}/> {match.home_team}</div>}
+                      onChange={e=>setResult(match.id,"home_team",e.target.value)} placeholder={getKOAanduiding(match.round_id,match.match_num,true)}/>
+                    {match.home_team
+                      ? <div style={{display:"flex",alignItems:"center",gap:4,fontSize:12}}><FlagImg name={match.home_team} size={14}/> {match.home_team}</div>
+                      : <div style={{fontSize:11,color:COLORS.gray,fontStyle:"italic"}}>{getKOAanduiding(match.round_id,match.match_num,true)}</div>}
                   </div>
                   <ScoreStepper value={match.home_goals??""} onChange={v=>setResult(match.id,"home_goals",v)} disabled={false}/>
                   <span style={{fontWeight:700,color:COLORS.gray}}>–</span>
                   <ScoreStepper value={match.away_goals??""} onChange={v=>setResult(match.id,"away_goals",v)} disabled={false}/>
                   <div style={{display:"flex",flexDirection:"column",gap:3}}>
                     <input style={{...S.input,fontSize:12,padding:"5px 8px"}} value={match.away_team||""}
-                      onChange={e=>setResult(match.id,"away_team",e.target.value)} placeholder="Uitland invoeren…"/>
-                    {match.away_team&&<div style={{display:"flex",alignItems:"center",gap:4,fontSize:12}}><FlagImg name={match.away_team} size={14}/> {match.away_team}</div>}
+                      onChange={e=>setResult(match.id,"away_team",e.target.value)} placeholder={getKOAanduiding(match.round_id,match.match_num,false)}/>
+                    {match.away_team
+                      ? <div style={{display:"flex",alignItems:"center",gap:4,fontSize:12}}><FlagImg name={match.away_team} size={14}/> {match.away_team}</div>
+                      : <div style={{fontSize:11,color:COLORS.gray,fontStyle:"italic"}}>{getKOAanduiding(match.round_id,match.match_num,false)}</div>}
                   </div>
                   <button style={{...S.btn(),fontSize:11,padding:"4px 8px"}} onClick={()=>deleteMatch(match.id)}>✕</button>
                 </div>

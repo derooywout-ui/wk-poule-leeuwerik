@@ -2361,12 +2361,11 @@ function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
     },{});
   const dataPunten = Object.values(perWedstrijd).sort((a,b)=>a.matches_played-b.matches_played);
 
-  // Voor de tijdas: gebruik de speeldatum (of created_at als fallback) van elk punt
+  // Voor de tijdas: ALTIJD created_at gebruiken (exact tijdstip), nooit
+  // speeldatum (die rondt af naar middernacht en geeft bij meerdere snapshots
+  // op dezelfde dag identieke x-coördinaten — daardoor kan de lijn lijken
+  // terug te lopen omdat de tekenvolgorde dan niet meer gegarandeerd is).
   function tsVan(p){
-    if(p.speeldatum){
-      const [j,m,d]=p.speeldatum.split("-").map(Number);
-      return new Date(j,m-1,d).getTime();
-    }
     return new Date(p.created_at).getTime();
   }
 
@@ -2585,21 +2584,31 @@ function DeelnemerOverlay({p, ctx, onClose}){
   // Gebruik speeldatum (de werkelijke speeldag), niet created_at (opslagmoment
   // van de Apps Script — kan door tijdzone/timing afwijken van de speeldag).
   function fmtSnapDate(snap){
-    if(!snap||!snap.speeldatum) return "";
-    const [jaar,maand,dag] = snap.speeldatum.split("-").map(Number);
-    const d = new Date(jaar, maand-1, dag);
+    if(!snap) return "";
+    // Gebruik speeldatum als die er is, anders created_at als fallback
+    // (sommige snapshots missen speeldatum, bv. door handmatige correcties)
+    let d;
+    if(snap.speeldatum){
+      const [jaar,maand,dag] = snap.speeldatum.split("-").map(Number);
+      d = new Date(jaar, maand-1, dag);
+    } else if(snap.created_at){
+      d = new Date(snap.created_at);
+    } else {
+      return "";
+    }
     const weekdagen=["zo","ma","di","wo","do","vr","za"];
     const wd=weekdagen[d.getDay()];
-    const dd=String(dag).padStart(2,"0");
-    const mm=String(maand).padStart(2,"0");
+    const dd=String(d.getDate()).padStart(2,"0");
+    const mm=String(d.getMonth()+1).padStart(2,"0");
     return `${wd} ${dd}-${mm}`;
   }
-  // Sorteer op speeldatum (niet created_at) om de eerste keer te vinden
+  // Sorteer op speeldatum waar aanwezig, anders created_at, om de eerste keer te vinden
+  function sortKey(r){ return r.speeldatum || r.created_at || ""; }
   const hoogsteStandSnap = hoogsteStand!==null
-    ? allMySnaps.filter(r=>r.rank===hoogsteStand && r.speeldatum).sort((a,b)=>a.speeldatum.localeCompare(b.speeldatum))[0]
+    ? allMySnaps.filter(r=>r.rank===hoogsteStand).sort((a,b)=>sortKey(a).localeCompare(sortKey(b)))[0]
     : null;
   const laagsteStandSnap = laagsteStand!==null
-    ? allMySnaps.filter(r=>r.rank===laagsteStand && r.speeldatum).sort((a,b)=>a.speeldatum.localeCompare(b.speeldatum))[0]
+    ? allMySnaps.filter(r=>r.rank===laagsteStand).sort((a,b)=>sortKey(a).localeCompare(sortKey(b)))[0]
     : null;
   const hoogsteStandDatum = fmtSnapDate(hoogsteStandSnap);
   const laagsteStandDatum = fmtSnapDate(laagsteStandSnap);

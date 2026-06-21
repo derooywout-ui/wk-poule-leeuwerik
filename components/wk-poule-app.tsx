@@ -1923,10 +1923,10 @@ function HomeView({setView,ctx}){
               // Deterministische dagelijkse selectie: seed op vandaag's datum,
               // sorteer kandidaten op (prioriteit + dag-specifieke shuffle-component)
               const seed=seedHash(vandaag);
-              const top3=kandidaten
+              const topInsights=kandidaten
                 .map((k,i)=>({...k, sortKey: k.prioriteit*1000 + ((seed+i*37)%97)}))
                 .sort((a,b)=>b.sortKey-a.sortKey)
-                .slice(0,3);
+                .slice(0,6);
 
               return(
                 <div style={{marginTop:20,paddingTop:16,borderTop:`1px solid ${C2.border}`}}>
@@ -1934,7 +1934,7 @@ function HomeView({setView,ctx}){
                     <span style={{fontSize:12,fontWeight:700,color:C2.gray,textTransform:"uppercase",letterSpacing:0.5}}>Wist je dat...</span>
                     <Tooltip text="Een dagelijks wisselende selectie van bijzondere feiten uit de poule — gebaseerd op records, voorspelpatronen en prestaties. Verandert elke kalenderdag."/>
                   </div>
-                  {top3.map((k,i)=>(
+                  {topInsights.map((k,i)=>(
                     <div key={i} style={{
                       display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",
                       borderRadius:8,marginBottom:8,background:"#f9fffe",

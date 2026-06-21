@@ -1931,7 +1931,7 @@ function HomeView({setView,ctx}){
               return(
                 <div style={{marginTop:20,paddingTop:16,borderTop:`1px solid ${C2.border}`}}>
                   <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:10}}>
-                    <span style={{fontSize:12,fontWeight:700,color:C2.gray,textTransform:"uppercase",letterSpacing:0.5}}>Insights van Louis</span>
+                    <span style={{fontSize:12,fontWeight:700,color:C2.gray,textTransform:"uppercase",letterSpacing:0.5}}>Wist je dat...</span>
                     <Tooltip text="Een dagelijks wisselende selectie van bijzondere feiten uit de poule — gebaseerd op records, voorspelpatronen en prestaties. Verandert elke kalenderdag."/>
                   </div>
                   {top3.map((k,i)=>(

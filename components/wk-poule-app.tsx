@@ -88,6 +88,16 @@ const NL_TO_EN_ALIAS = {
   "Ghana":"ghana","Panama":"panama",
 };
 
+function InsightNaam({p, onSelect}){
+  if(!p) return <strong>Onbekend</strong>;
+  return(
+    <strong style={{color:COLORS.green,cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted"}}
+      onClick={()=>onSelect(p)}>
+      {p.first_name} {p.last_name}
+    </strong>
+  );
+}
+
 function FlagImg({ name, size=20 }) {
   const code = FLAG_CODES[name];
   if (!code) return <span>🏳️</span>;
@@ -1368,8 +1378,10 @@ function HelpView(){
 function HomeView({setView,ctx}){
   const dp=deadlinePassed();
   const [stijgersDalersModus,setStijgersDalersModus]=React.useState("wedstrijd"); // "wedstrijd" | "dag"
+  const [selectedInsight,setSelectedInsight]=React.useState(null);
   return(
     <div>
+      {selectedInsight&&<DeelnemerOverlay p={selectedInsight} ctx={ctx} onClose={()=>setSelectedInsight(null)}/>}
       <div style={{...S.card,background:COLORS.green,color:"#fff",textAlign:"center",padding:"0",overflow:"hidden",position:"relative"}}>
         <img src={WK_LOGO_IMG} alt="FIFA World Cup 2026" style={{width:"100%",maxHeight:220,objectFit:"cover",objectPosition:"center 30%",opacity:0.22,display:"block"}}/>
         <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"28px 20px"}}>
@@ -1760,7 +1772,7 @@ function HomeView({setView,ctx}){
                   .filter(mid=>ctx.matchResults[mid]&&ctx.matchResults[mid].home!==null)
                   .sort((a,b)=>matchDt(a)-matchDt(b));
 
-                let besteStreak={naam:null,lengte:0,type:null};
+                let besteStreak={naam:null,lengte:0,type:null,deelnemer:null};
                 ctx.participants.forEach(p=>{
                   const pred=ctx.predictions[p.id]||{};
                   let streak=0,maxStreak=0;
@@ -1771,13 +1783,13 @@ function HomeView({setView,ctx}){
                     if(toto){streak++;maxStreak=Math.max(maxStreak,streak);}else{streak=0;}
                   });
                   if(maxStreak>besteStreak.lengte){
-                    besteStreak={naam:`${p.first_name} ${p.last_name}`,lengte:maxStreak,type:"toto"};
+                    besteStreak={naam:`${p.first_name} ${p.last_name}`,lengte:maxStreak,type:"toto",deelnemer:p};
                   }
                 });
                 if(besteStreak.lengte>=2){
                   kandidaten.push({
                     icon:"🔥",
-                    tekst:<><strong>{besteStreak.naam}</strong> heeft <strong>{besteStreak.lengte}</strong> wedstrijden op rij de juiste toto voorspeld!</>,
+                    tekst:<><InsightNaam p={besteStreak.deelnemer} onSelect={setSelectedInsight}/> heeft <strong>{besteStreak.lengte}</strong> wedstrijden op rij de juiste toto voorspeld!</>,
                     prioriteit:Math.min(10, besteStreak.lengte*2),
                   });
                 }
@@ -1793,19 +1805,19 @@ function HomeView({setView,ctx}){
                   perDeelnemerPerDag[key].min=Math.min(perDeelnemerPerDag[key].min,r.rank);
                   perDeelnemerPerDag[key].max=Math.max(perDeelnemerPerDag[key].max,r.rank);
                 });
-                let grootsteSprong={naam:null,verschil:0,datum:null};
+                let grootsteSprong={naam:null,verschil:0,datum:null,deelnemer:null};
                 Object.entries(perDeelnemerPerDag).forEach(([key,{min,max}])=>{
                   const verschil=max-min;
                   if(verschil>grootsteSprong.verschil){
                     const[pid,datum]=key.split("|");
                     const p=ctx.participants.find(pp=>pp.id===pid);
-                    if(p) grootsteSprong={naam:`${p.first_name} ${p.last_name}`,verschil,datum};
+                    if(p) grootsteSprong={naam:`${p.first_name} ${p.last_name}`,verschil,datum,deelnemer:p};
                   }
                 });
                 if(grootsteSprong.verschil>=10){
                   kandidaten.push({
                     icon:"🚀",
-                    tekst:<><strong>{grootsteSprong.naam}</strong> steeg op één dag maar liefst <strong>{grootsteSprong.verschil}</strong> plekken in het klassement!</>,
+                    tekst:<><InsightNaam p={grootsteSprong.deelnemer} onSelect={setSelectedInsight}/> steeg op één dag maar liefst <strong>{grootsteSprong.verschil}</strong> plekken in het klassement!</>,
                     prioriteit:Math.min(10, 3 + grootsteSprong.verschil/8),
                   });
                 }
@@ -1857,7 +1869,7 @@ function HomeView({setView,ctx}){
                       if(!pp||pp.home===undefined||pp.home===null) return false;
                       return calcToto(pp.home,pp.away)===calcToto(r.home,r.away);
                     });
-                    if(alleGoed) perfecteDagen.push({naam:`${p.first_name} ${p.last_name}`,datum,aantal:gespeeld.length});
+                    if(alleGoed) perfecteDagen.push({naam:`${p.first_name} ${p.last_name}`,datum,aantal:gespeeld.length,deelnemer:p});
                   });
                 });
                 if(perfecteDagen.length>0){
@@ -1866,7 +1878,7 @@ function HomeView({setView,ctx}){
                   const beste=perfecteDagen[0];
                   kandidaten.push({
                     icon:"💯",
-                    tekst:<><strong>{beste.naam}</strong> had op <strong>{beste.datum}</strong> alle <strong>{beste.aantal}</strong> wedstrijden goed (toto)!</>,
+                    tekst:<><InsightNaam p={beste.deelnemer} onSelect={setSelectedInsight}/> had op <strong>{beste.datum}</strong> alle <strong>{beste.aantal}</strong> wedstrijden goed (toto)!</>,
                     prioriteit:Math.min(10, 2 + beste.aantal*1.5),
                   });
                 }

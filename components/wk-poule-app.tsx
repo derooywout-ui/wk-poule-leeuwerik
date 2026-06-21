@@ -3726,7 +3726,7 @@ function weekdayNL(d){return["zondag","maandag","dinsdag","woensdag","donderdag"
 
 
 // ─── PREDICTIE UITKLAP (deelnemerslijst + staafdiagram per wedstrijd) ──────────
-function PredictieUitklap({predRows,t1,t2,hasResult,mid,isKO=false,KO_EXACT_PTS=10,KO_TOTO_PTS=5,defaultOpen=false}){
+function PredictieUitklap({predRows,t1,t2,hasResult,mid,isKO=false,KO_EXACT_PTS=10,KO_TOTO_PTS=5,defaultOpen=false,onSelectDeelnemer}){
   const [open,setOpen]=React.useState(defaultOpen);
   const chartId=`chart_${mid.replace(/[^a-zA-Z0-9]/g,"_")}`;
 
@@ -3821,7 +3821,7 @@ function PredictieUitklap({predRows,t1,t2,hasResult,mid,isKO=false,KO_EXACT_PTS=
                   const ptsColor=isKO?(p.pts===KO_EXACT_PTS?"#fff":p.pts===KO_TOTO_PTS?COLORS.dark:"#999"):(p.pts===5?"#fff":p.pts===3?COLORS.dark:"#999");
                   return(
                     <tr key={p.id} style={{background:i%2===0?"#f9fffe":"#fff"}}>
-                      <td style={{...S.td,fontWeight:600,cursor:"pointer",color:COLORS.green}} onClick={()=>setSelectedP(p)}>
+                      <td style={{...S.td,fontWeight:600,cursor:"pointer",color:COLORS.green}} onClick={()=>onSelectDeelnemer&&onSelectDeelnemer(p)}>
                     {p.first_name} {p.last_name} <span style={{fontSize:12,opacity:0.6}}>›</span>
                   </td>
                       <td style={S.tdc}>{p.hasPred?p.pred.home:<span style={{color:COLORS.gray}}>—</span>}</td>
@@ -3850,6 +3850,7 @@ function PredictieUitklap({predRows,t1,t2,hasResult,mid,isKO=false,KO_EXACT_PTS=
 
 function DagProgrammaView({ctx, setView}){
   const dp=deadlinePassed();
+  const [selectedP,setSelectedP]=React.useState(null);
 
   // Build combined date map: group matches + KO matches
   const allDatesMap=useMemo(()=>{
@@ -3901,6 +3902,7 @@ function DagProgrammaView({ctx, setView}){
   const weekdag=selDate?weekdayNL(selDate):"";
   return(
     <div>
+      {selectedP&&<DeelnemerOverlay p={selectedP} ctx={ctx} onClose={()=>setSelectedP(null)}/>}
       <div style={{...S.card,paddingBottom:12}}>
         <h2 style={{...S.h2,marginBottom:6}}>📅 Programma</h2>
         <p style={{fontSize:13,color:COLORS.gray,marginBottom:14}}>Kies een speeldag en zie alle wedstrijden + voorspellingen.</p>
@@ -3964,7 +3966,7 @@ function DagProgrammaView({ctx, setView}){
                     if(!closed) return(
                       <div style={{...S.alert("warn"),fontSize:12}}>🔒 Voorspellingen zichtbaar na aanvang van de wedstrijd.</div>
                     );
-                    return <PredictieUitklap predRows={predRows} t1={t1||{name:"Thuis"}} t2={t2||{name:"Uit"}} hasResult={hasResult} mid={mid} isKO={true} KO_EXACT_PTS={KO_EXACT_PTS} KO_TOTO_PTS={KO_TOTO_PTS}/>;
+                    return <PredictieUitklap predRows={predRows} t1={t1||{name:"Thuis"}} t2={t2||{name:"Uit"}} hasResult={hasResult} mid={mid} isKO={true} KO_EXACT_PTS={KO_EXACT_PTS} KO_TOTO_PTS={KO_TOTO_PTS} onSelectDeelnemer={setSelectedP}/>;
                   })()}
                 </div>
               );
@@ -4012,7 +4014,7 @@ function DagProgrammaView({ctx, setView}){
                 {!dp?(
                   <div style={{...S.alert("warn"),fontSize:12}}>🔒 Voorspellingen zichtbaar na de deadline ({fmtDeadline()}).</div>
                 ):(
-                  <PredictieUitklap predRows={predRows} t1={t1} t2={t2} hasResult={hasResult} mid={mid} defaultOpen={autoOpenMid===mid}/>
+                  <PredictieUitklap predRows={predRows} t1={t1} t2={t2} hasResult={hasResult} mid={mid} defaultOpen={autoOpenMid===mid} onSelectDeelnemer={setSelectedP}/>
                 )}
               </div>
             );
@@ -4647,6 +4649,7 @@ function AdminBeoordeel({ctx}){
   const [localScores,setLocalScores]=useState(ctx.bonusScores||{});
   const [saving,setSaving]=useState({});
   const [saved,setSaved]=useState({});
+  const [selectedP,setSelectedP]=useState(null);
 
   async function setScore(uid,idx,val){
     setLocalScores(p=>({...p,[uid]:{...(p[uid]||{}),[idx]:val}}));
@@ -4680,6 +4683,7 @@ function AdminBeoordeel({ctx}){
 
   return(
     <div>
+      {selectedP&&<DeelnemerOverlay p={selectedP} ctx={ctx} onClose={()=>setSelectedP(null)}/>}
       <div style={S.alert("")}>Beoordeel per vraag de antwoorden van alle deelnemers. Wordt direct opgeslagen.</div>
       {ctx.bonusQuestions.map(q=>(
         <div key={q.idx} style={S.card}>

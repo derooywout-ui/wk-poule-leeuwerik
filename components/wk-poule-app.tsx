@@ -1793,6 +1793,46 @@ function HomeView({setView,ctx}){
                     prioriteit:Math.min(10, besteStreak.lengte*2),
                   });
                 }
+
+                // ── Detector 1b: Langste EXACTE-uitslag-reeks (2+ op rij) ──
+                let besteExactStreak={naam:null,lengte:0,deelnemer:null};
+                ctx.participants.forEach(p=>{
+                  const pred=ctx.predictions[p.id]||{};
+                  let streak=0,maxStreak=0;
+                  gespeeldeMids.forEach(mid=>{
+                    const pp=pred[mid];const r=ctx.matchResults[mid];
+                    if(!pp||pp.home===undefined||pp.home===null){streak=0;return;}
+                    const exact=parseInt(pp.home)===parseInt(r.home)&&parseInt(pp.away)===parseInt(r.away);
+                    if(exact){streak++;maxStreak=Math.max(maxStreak,streak);}else{streak=0;}
+                  });
+                  if(maxStreak>besteExactStreak.lengte){
+                    besteExactStreak={naam:`${p.first_name} ${p.last_name}`,lengte:maxStreak,deelnemer:p};
+                  }
+                });
+                if(besteExactStreak.lengte>=2){
+                  kandidaten.push({
+                    icon:"🎯",
+                    tekst:<><InsightNaam p={besteExactStreak.deelnemer} onSelect={setSelectedInsight}/> voorspelde <strong>{besteExactStreak.lengte}</strong> wedstrijden op rij de EXACTE uitslag — knap precisiewerk!</>,
+                    prioriteit:Math.min(10, 4 + besteExactStreak.lengte*2),
+                  });
+                }
+
+                // ── Detector 1c: Gemiddeld aantal doelpunten t.o.v. WK 2022 ──
+                const WK2022_GEM_GOALS=2.69; // bron: FIFA officieel, 172 goals / 64 wedstrijden
+                const totaalGoals=gespeeldeMids.reduce((sum,mid)=>{
+                  const r=ctx.matchResults[mid];
+                  return sum+parseInt(r.home)+parseInt(r.away);
+                },0);
+                if(gespeeldeMids.length>=10){
+                  const gemHuidig=totaalGoals/gespeeldeMids.length;
+                  const verschilPct=Math.round((gemHuidig-WK2022_GEM_GOALS)/WK2022_GEM_GOALS*100);
+                  const richting=verschilPct>0?"meer":"minder";
+                  kandidaten.push({
+                    icon:"⚽",
+                    tekst:<>Er vallen gemiddeld <strong>{gemHuidig.toFixed(2)}</strong> doelpunten per wedstrijd op dit WK — dat is <strong>{Math.abs(verschilPct)}% {richting}</strong> dan op WK 2022 ({WK2022_GEM_GOALS} per wedstrijd).</>,
+                    prioriteit:Math.min(10, 3+Math.abs(verschilPct)/5),
+                  });
+                }
               })();
 
               // ── Detector 2: Grootste stijger/daler ooit in 1 dag ──

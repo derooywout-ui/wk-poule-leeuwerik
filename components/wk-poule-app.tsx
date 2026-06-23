@@ -1568,7 +1568,7 @@ function HomeView({setView,ctx}){
               const prev=prevSnap.find(p=>p.participant_id===cur.participant_id);
               const participant=ctx.participants.find(p=>p.id===cur.participant_id);
               if(!prev||!participant) return null;
-              return{name:`${participant.first_name} ${participant.last_name}`,rankNow:cur.rank,rankPrev:prev.rank,change:prev.rank-cur.rank};
+              return{name:`${participant.first_name} ${participant.last_name}`,participant,rankNow:cur.rank,rankPrev:prev.rank,change:prev.rank-cur.rank};
             }).filter(Boolean);
             top3stijgers=changes.filter(c=>c.change>0).sort((a,b)=>b.change-a.change||a.rankNow-b.rankNow).slice(0,3);
             top3dalers=changes.filter(c=>c.change<0).sort((a,b)=>a.change-b.change||b.rankNow-a.rankNow).slice(0,3);
@@ -1584,7 +1584,7 @@ function HomeView({setView,ctx}){
               const prev=prevSnap.find(p=>p.participant_id===cur.participant_id);
               const participant=ctx.participants.find(p=>p.id===cur.participant_id);
               if(!prev||!participant) return null;
-              return{name:`${participant.first_name} ${participant.last_name}`,rankNow:cur.rank,rankPrev:prev.rank,change:prev.rank-cur.rank};
+              return{name:`${participant.first_name} ${participant.last_name}`,participant,rankNow:cur.rank,rankPrev:prev.rank,change:prev.rank-cur.rank};
             }).filter(Boolean);
             top3stijgers=changes.filter(c=>c.change>0).sort((a,b)=>b.change-a.change||a.rankNow-b.rankNow).slice(0,3);
             top3dalers=changes.filter(c=>c.change<0).sort((a,b)=>a.change-b.change||b.rankNow-a.rankNow).slice(0,3);
@@ -1612,7 +1612,7 @@ function HomeView({setView,ctx}){
             const to=calcToto(pp.home,pp.away)===calcToto(r.home,r.away);
             if(ex){totoOk++;exactOk++;}else if(to){totoOk++;}
           });
-          return{name:`${p.first_name} ${p.last_name}`,totoOk,exactOk,total,aantalIngevuld};
+          return{name:`${p.first_name} ${p.last_name}`,participant:p,totoOk,exactOk,total,aantalIngevuld};
         }).filter(r=>r.total>0);
 
         // Drempel: minimaal 50 van 72 wedstrijden ingevuld
@@ -1667,7 +1667,7 @@ function HomeView({setView,ctx}){
                     {top3stijgers.map((c,i)=>(
                       <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 0",borderBottom:i<top3stijgers.length-1?`1px solid ${C.border}`:"none"}}>
                         <span style={{fontSize:12,color:C.gray,width:16,flexShrink:0}}>{i+1}</span>
-                        <span style={{flex:1,fontSize:13,fontWeight:600}}>{c.name}</span>
+                        <span style={{flex:1,fontSize:13,fontWeight:600}}><InsightNaam p={c.participant} onSelect={setSelectedInsight}/></span>
                         <span style={{fontSize:12,color:C.gray}}>#{c.rankPrev}</span>
                         <span style={{color:C.green,fontSize:13}}>→</span>
                         <span style={{fontSize:13,fontWeight:800,color:C.green}}>#{c.rankNow}</span>
@@ -1682,7 +1682,7 @@ function HomeView({setView,ctx}){
                     {top3dalers.map((c,i)=>(
                       <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 0",borderBottom:i<top3dalers.length-1?`1px solid ${C.border}`:"none"}}>
                         <span style={{fontSize:12,color:C.gray,width:16,flexShrink:0}}>{i+1}</span>
-                        <span style={{flex:1,fontSize:13,fontWeight:600}}>{c.name}</span>
+                        <span style={{flex:1,fontSize:13,fontWeight:600}}><InsightNaam p={c.participant} onSelect={setSelectedInsight}/></span>
                         <span style={{fontSize:12,color:C.gray}}>#{c.rankPrev}</span>
                         <span style={{color:"#c62828",fontSize:13}}>→</span>
                         <span style={{fontSize:13,fontWeight:800,color:"#c62828"}}>#{c.rankNow}</span>
@@ -1707,7 +1707,7 @@ function HomeView({setView,ctx}){
                       return(
                         <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:i<top3toto.length-1?`1px solid ${C.border}`:"none"}}>
                           <span style={{fontSize:12,color:C.gray,width:16,flexShrink:0}}>{i+1}</span>
-                          <span style={{flex:1,fontSize:13,fontWeight:600}}>{r.name}</span>
+                          <span style={{flex:1,fontSize:13,fontWeight:600}}><InsightNaam p={r.participant} onSelect={setSelectedInsight}/></span>
                           <span style={{fontSize:12,color:C.gray}}>{r.totoOk}/{r.total}</span>
                           <span style={{fontSize:12,fontWeight:700,color:C.green,minWidth:40,textAlign:"right"}}>{pct}%</span>
                         </div>
@@ -1728,7 +1728,7 @@ function HomeView({setView,ctx}){
                       return(
                         <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:i<top3exact.length-1?`1px solid ${C.border}`:"none"}}>
                           <span style={{fontSize:12,color:C.gray,width:16,flexShrink:0}}>{i+1}</span>
-                          <span style={{flex:1,fontSize:13,fontWeight:600}}>{r.name}</span>
+                          <span style={{flex:1,fontSize:13,fontWeight:600}}><InsightNaam p={r.participant} onSelect={setSelectedInsight}/></span>
                           <span style={{fontSize:12,color:C.gray}}>{r.exactOk}/{r.total}</span>
                           <span style={{fontSize:12,fontWeight:700,color:"#1565c0",minWidth:40,textAlign:"right"}}>{pct}%</span>
                         </div>
@@ -3780,14 +3780,18 @@ function weekdayNL(d){return["zondag","maandag","dinsdag","woensdag","donderdag"
 // ─── PREDICTIE UITKLAP (deelnemerslijst + staafdiagram per wedstrijd) ──────────
 function PredictieUitklap({predRows,t1,t2,hasResult,mid,isKO=false,KO_EXACT_PTS=10,KO_TOTO_PTS=5,defaultOpen=false,onSelectDeelnemer}){
   const [open,setOpen]=React.useState(defaultOpen);
+  const [selectedUitslag,setSelectedUitslag]=React.useState(null); // "home-away" key van aangeklikte balk
   const chartId=`chart_${mid.replace(/[^a-zA-Z0-9]/g,"_")}`;
 
-  // Bouw frequentietabel van uitslag-combinaties
+  // Bouw frequentietabel van uitslag-combinaties + namen per uitslag
   const freqMap={};
+  const namenMap={}; // key -> [{deelnemer-object}, ...]
   predRows.forEach(p=>{
     if(!p.hasPred) return;
     const key=`${p.pred.home}-${p.pred.away}`;
     freqMap[key]=(freqMap[key]||0)+1;
+    if(!namenMap[key]) namenMap[key]=[];
+    namenMap[key].push(p);
   });
   const freqData=Object.entries(freqMap).sort((a,b)=>b[1]-a[1]);
   const chartLabels=freqData.map(([k])=>k);
@@ -3830,9 +3834,27 @@ function PredictieUitklap({predRows,t1,t2,hasResult,mid,isKO=false,KO_EXACT_PTS=
       },
       options:{
         responsive:true,maintainAspectRatio:false,
+        onClick:(evt,elements)=>{
+          if(elements&&elements.length>0){
+            const idx=elements[0].index;
+            const key=chartLabels[idx];
+            setSelectedUitslag(prev=>prev===key?null:key);
+          }
+        },
         plugins:{
           legend:{display:false},
-          tooltip:{callbacks:{label:ctx=>" "+ctx.raw+"× ("+Math.round(ctx.raw/totalPred*100)+"%)"}}
+          tooltip:{callbacks:{
+            label:ctx=>" "+ctx.raw+"× ("+Math.round(ctx.raw/totalPred*100)+"%)",
+            afterLabel:ctx=>{
+              const key=chartLabels[ctx.dataIndex];
+              const namen=(namenMap[key]||[]).map(p=>`${p.first_name} ${p.last_name}`);
+              if(namen.length===0) return "";
+              const eerste=namen.slice(0,5);
+              const rest=namen.length-eerste.length;
+              const lijst=eerste.join("\n");
+              return "\n"+lijst+(rest>0?`\n…+${rest} meer (tik balk)`:"");
+            }
+          }}
         },
         scales:{
           x:{ticks:{color:textColor,font:{size:12},autoSkip:false},grid:{display:false},border:{display:false}},
@@ -3848,7 +3870,7 @@ function PredictieUitklap({predRows,t1,t2,hasResult,mid,isKO=false,KO_EXACT_PTS=
   return(
     <div>
       <button
-        onClick={()=>setOpen(o=>!o)}
+        onClick={()=>setOpen(o=>{if(o)setSelectedUitslag(null);return !o;})}
         style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:COLORS.light,border:`1px solid ${COLORS.border}`,borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700,color:COLORS.dark}}
       >
         <span>⚽ Wat voorspelt Leeuwerik? ({totalPred} voorspellingen)</span>
@@ -3892,6 +3914,24 @@ function PredictieUitklap({predRows,t1,t2,hasResult,mid,isKO=false,KO_EXACT_PTS=
               <div style={{position:"relative",width:"100%",height:`${Math.max(180, freqData.length*36+60)}px`}}>
                 <canvas id={chartId} role="img" aria-label={`Staafdiagram verdeling voorspellingen ${t1.name} - ${t2.name}`}/>
               </div>
+              <div style={{fontSize:11,color:COLORS.gray,textAlign:"center",marginTop:4}}>Tik op een balk om te zien wie die uitslag voorspelde</div>
+              {selectedUitslag&&namenMap[selectedUitslag]&&(
+                <div style={{marginTop:10,padding:"12px 14px",background:"#f9fffe",border:`1px solid ${COLORS.border}`,borderRadius:8}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                    <span style={{fontSize:13,fontWeight:700,color:COLORS.dark}}>
+                      Uitslag {selectedUitslag.replace("-"," – ")} · {namenMap[selectedUitslag].length}× voorspeld
+                    </span>
+                    <span onClick={()=>setSelectedUitslag(null)} style={{cursor:"pointer",fontSize:16,color:COLORS.gray,lineHeight:1,padding:"0 4px"}}>✕</span>
+                  </div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:"6px 12px"}}>
+                    {namenMap[selectedUitslag].map((p,i)=>(
+                      <span key={p.id||i} onClick={()=>onSelectDeelnemer&&onSelectDeelnemer(p)} style={{fontSize:13,color:COLORS.green,fontWeight:600,cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted"}}>
+                        {p.first_name} {p.last_name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -2899,16 +2899,45 @@ function DeelnemerOverlay({p, ctx, onClose}){
     const best8 = nr3s.sort((a,b)=>b.pts-a.pts||b.saldo-a.saldo||b.gv-a.gv).slice(0,8);
     best8.forEach(t=>rows.push({naam:t.name, grp:t.grp, positie:"beste 3e"}));
 
-    return rows.map(({naam,grp,positie})=>{
+    // De landen die deze deelnemer als doorstoter voorspelde (NL-namen)
+    const voorspeldeNamen = new Set(rows.map(r=>r.naam));
+
+    const detail = rows.map(({naam,grp,positie})=>{
       const enNaam = NL_TO_EN_ALIAS[naam] || naam.toLowerCase();
       const isDoorgestoten = ctx.doorstootLanden && ctx.doorstootLanden.includes(enNaam);
-      return { naam, grp, positie, doorgestoten: isDoorgestoten };
-    }).sort((a,b)=>{
-      if(a.doorgestoten!==b.doorgestoten) return a.doorgestoten?-1:1;
-      return a.naam.localeCompare(b.naam,"nl");
+      return { naam, grp, positie, doorgestoten: isDoorgestoten, gemist:false };
     });
+
+    // GEMISTE doorstoters: landen die ECHT zijn doorgestoten maar die deze
+    // deelnemer NIET als doorstoter voorspelde → 0 punten laten liggen.
+    // Toon hoe de deelnemer dat land wél inschatte (positie in eigen groepsstand).
+    if(ctx.doorstootLanden && ctx.doorstootLanden.length>0){
+      const EN_TO_NL_DS = Object.fromEntries(Object.entries(NL_TO_EN_ALIAS).map(([nl,en])=>[en,nl]));
+      ctx.doorstootLanden.forEach(enNaam=>{
+        const nlNaam = EN_TO_NL_DS[enNaam] || enNaam;
+        if(voorspeldeNamen.has(nlNaam)) return; // wél voorspeld → al in de lijst
+        // Zoek groep + voorspelde positie van dit land
+        let grpGevonden=null, positieGevonden="niet voorspeld";
+        Object.entries(WK_GROUPS).forEach(([grp,teams])=>{
+          if(teams.some(t=>t.name===nlNaam)){
+            grpGevonden=grp;
+            const stand=calcGroepsstandFromPred(grp,teams,pred);
+            const idx=stand.findIndex(s=>s.name===nlNaam);
+            if(idx>=0 && stand[idx].gespeeld>0){
+              positieGevonden = (idx===0?"1e":idx===1?"2e":idx===2?"3e":"4e");
+            }
+          }
+        });
+        if(grpGevonden){
+          detail.push({ naam:nlNaam, grp:grpGevonden, positie:positieGevonden, doorgestoten:true, gemist:true });
+        }
+      });
+    }
+
+    // Eén alfabetische lijst; kleur (groen/rood/grijs) maakt het verschil
+    return detail.sort((a,b)=>a.naam.localeCompare(b.naam,"nl"));
   })();
-  const doorstootPuntenTotaal = doorstootDetail.filter(d=>d.doorgestoten).length * DOORSTOOT_PTS;
+  const doorstootPuntenTotaal = doorstootDetail.filter(d=>d.doorgestoten && !d.gemist).length * DOORSTOOT_PTS;
 
   // Sluit bij klik buiten overlay
   function handleBackdrop(e){if(e.target===e.currentTarget)onClose();}
@@ -3088,23 +3117,30 @@ function DeelnemerOverlay({p, ctx, onClose}){
                 <span style={{fontSize:12,fontWeight:700,color:C.green}}>{doorstootPuntenTotaal} pt totaal</span>
               </div>
               <div style={{marginBottom:16}}>
-                {doorstootDetail.map(({naam,grp,positie,doorgestoten})=>(
-                  <div key={naam} style={{
-                    display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:7,marginBottom:4,
-                    background:doorgestoten?"#e8f5ee":"#f7f7f7",
-                    border:`1px solid ${doorgestoten?"#b2dfdb":"#e0e0e0"}`,
-                  }}>
-                    <span style={{fontSize:10,color:C.gray,width:32,flexShrink:0}}>Gr {grp}</span>
-                    <FlagImg name={naam} size={16}/>
-                    <span style={{flex:1,fontSize:13,fontWeight:600,color:doorgestoten?C.dark:C.gray}}>{naam}</span>
-                    <span style={{fontSize:11,color:C.gray,minWidth:60,textAlign:"center"}}>
-                      voorspeld als {positie}
-                    </span>
-                    <span style={{fontSize:12,fontWeight:700,color:doorgestoten?C.green:C.gray,minWidth:75,textAlign:"right"}}>
-                      {doorgestoten?`✅ +${DOORSTOOT_PTS}pt`:"⏳ nog niet"}
-                    </span>
-                  </div>
-                ))}
+                {doorstootDetail.map(({naam,grp,positie,doorgestoten,gemist})=>{
+                  // Drie toestanden: groen (voorspeld + door), rood (gemist: door maar niet voorspeld), grijs (voorspeld, nog niet door)
+                  const bg = gemist ? "#fdecea" : doorgestoten ? "#e8f5ee" : "#f7f7f7";
+                  const border = gemist ? "#ef9a9a" : doorgestoten ? "#b2dfdb" : "#e0e0e0";
+                  const naamKleur = gemist ? "#c62828" : doorgestoten ? C.dark : C.gray;
+                  const puntKleur = gemist ? "#c62828" : doorgestoten ? C.green : C.gray;
+                  const puntTekst = gemist ? "❌ 0pt" : doorgestoten ? `✅ +${DOORSTOOT_PTS}pt` : "⏳ nog niet";
+                  return (
+                    <div key={naam} style={{
+                      display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:7,marginBottom:4,
+                      background:bg, border:`1px solid ${border}`,
+                    }}>
+                      <span style={{fontSize:10,color:C.gray,width:32,flexShrink:0}}>Gr {grp}</span>
+                      <FlagImg name={naam} size={16}/>
+                      <span style={{flex:1,fontSize:13,fontWeight:600,color:naamKleur}}>{naam}</span>
+                      <span style={{fontSize:11,color:C.gray,minWidth:60,textAlign:"center"}}>
+                        voorspeld als {positie}
+                      </span>
+                      <span style={{fontSize:12,fontWeight:700,color:puntKleur,minWidth:75,textAlign:"right"}}>
+                        {puntTekst}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}

@@ -495,7 +495,21 @@ function ChatHoekje({ctx}){
   const [laatstGezien,setLaatstGezien]=React.useState(0); // timestamp ms van laatst geopend
   const [bezig,setBezig]=React.useState(false);
   const [chatAan,setChatAan]=React.useState(true);
+  const [tagQuery,setTagQuery]=React.useState(null); // null = geen actieve @-tag; anders de tekst na @
   const lijstRef=React.useRef(null);
+  const inputRef=React.useRef(null);
+
+  // Lijst met alle deelnemersnamen (voor @-tag suggesties)
+  const alleNamen=React.useMemo(()=>{
+    return (ctx.participants||[]).map(p=>`${p.first_name} ${p.last_name}`).sort((a,b)=>a.localeCompare(b,"nl"));
+  },[ctx.participants]);
+
+  // Gefilterde suggesties op basis van wat er na @ getypt is
+  const tagSuggesties=React.useMemo(()=>{
+    if(tagQuery===null) return [];
+    const q=tagQuery.toLowerCase();
+    return alleNamen.filter(n=>n.toLowerCase().includes(q)).slice(0,6);
+  },[tagQuery,alleNamen]);
 
   // client_id: stabiele browser-id voor "eigen bericht verwijderen"
   const clientId=React.useMemo(()=>{
@@ -553,6 +567,30 @@ function ChatHoekje({ctx}){
     setNaamGekozen(true);
   }
 
+  // Detecteer of de gebruiker een @-tag aan het typen is (na laatste @ tot cursor)
+  function checkTag(waarde){
+    setTekst(waarde);
+    const match=waarde.match(/@([^@]*)$/); // alles na de laatste @
+    if(match){
+      // Alleen suggesties tonen zolang er geen spatie ná de @-naam staat die 'm afsluit
+      const naTeken=match[1];
+      // Sta een paar woorden toe (namen hebben spaties), maar stop bij dubbele spatie / nieuwe regel
+      if(!/\n/.test(naTeken)){
+        setTagQuery(naTeken);
+        return;
+      }
+    }
+    setTagQuery(null);
+  }
+
+  function kiesTag(volledigeNaam){
+    // Vervang het laatste "@..." door "@VolledigeNaam " (met spatie erachter)
+    const nieuw=tekst.replace(/@([^@]*)$/, `@${volledigeNaam} `);
+    setTekst(nieuw);
+    setTagQuery(null);
+    if(inputRef.current) inputRef.current.focus();
+  }
+
   async function verstuur(){
     const m=tekst.trim();
     if(!m || bezig || !chatAan) return;
@@ -577,6 +615,35 @@ function ChatHoekje({ctx}){
 
   function magVerwijderen(m){
     return ctx.isAdmin || m.client_id===clientId;
+  }
+
+  // Render een bericht met @-getagde namen gemarkeerd (alleen echte deelnemersnamen)
+  function renderBericht(tekst){
+    if(!tekst.includes("@")) return tekst;
+    // Sorteer namen op lengte (langste eerst) zodat "Jan de Laat" vóór "Jan" matcht
+    const namenGesorteerd=[...alleNamen].sort((a,b)=>b.length-a.length);
+    const delen=[];
+    let rest=tekst;
+    let guard=0;
+    while(rest.length>0 && guard<500){
+      guard++;
+      const atIdx=rest.indexOf("@");
+      if(atIdx===-1){ delen.push(rest); break; }
+      // Tekst vóór de @ toevoegen
+      if(atIdx>0) delen.push(rest.slice(0,atIdx));
+      const naAt=rest.slice(atIdx+1);
+      // Zoek of er direct een bekende naam na de @ staat
+      const gevonden=namenGesorteerd.find(n=>naAt.toLowerCase().startsWith(n.toLowerCase()));
+      if(gevonden){
+        delen.push(<span key={delen.length} style={{color:C.green,fontWeight:700,background:"#e8f5ee",borderRadius:4,padding:"0 3px"}}>@{gevonden}</span>);
+        rest=naAt.slice(gevonden.length);
+      }else{
+        // Geen bekende naam → @ als gewone tekst behandelen
+        delen.push("@");
+        rest=naAt;
+      }
+    }
+    return delen;
   }
 
   function tijdLabel(iso){
@@ -671,7 +738,7 @@ function ChatHoekje({ctx}){
                 </span>
                 <span style={{fontSize:10,color:C.gray,flexShrink:0}}>{tijdLabel(m.created_at)}</span>
               </div>
-              <div style={{fontSize:13,color:C.dark,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{m.message}</div>
+              <div style={{fontSize:13,color:C.dark,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{renderBericht(m.message)}</div>
               {magVerwijderen(m)&&(
                 <div style={{textAlign:"right",marginTop:2}}>
                   <button onClick={()=>verwijder(m.id)} style={{background:"none",border:"none",color:"#c62828",fontSize:11,cursor:"pointer",padding:0}}>verwijderen</button>
@@ -684,19 +751,44 @@ function ChatHoekje({ctx}){
 
       {/* Invoer */}
       {naamGekozen&&(
-        <div style={{borderTop:`1px solid ${C.border}`,padding:10,display:"flex",gap:6,alignItems:"flex-end"}}>
-          <textarea
-            value={tekst} onChange={e=>setTekst(e.target.value)}
-            onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();verstuur();}}}
-            placeholder={`Bericht als ${naam.trim()}…`}
-            rows={1}
-            style={{flex:1,padding:"8px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:13,resize:"none",maxHeight:80,fontFamily:"inherit"}}
-          />
-          <button onClick={verstuur} disabled={bezig||!tekst.trim()} style={{
-            padding:"8px 14px",borderRadius:8,border:"none",
-            background:(bezig||!tekst.trim())?"#bdbdbd":C.green,color:"#fff",fontWeight:700,fontSize:13,
-            cursor:(bezig||!tekst.trim())?"default":"pointer",flexShrink:0,
-          }}>➤</button>
+        <div style={{borderTop:`1px solid ${C.border}`,padding:10,position:"relative"}}>
+          {/* @-tag suggesties */}
+          {tagSuggesties.length>0&&(
+            <div style={{
+              position:"absolute",bottom:"100%",left:10,right:10,marginBottom:4,
+              background:"#fff",border:`1px solid ${C.border}`,borderRadius:8,
+              boxShadow:"0 -4px 14px rgba(0,0,0,0.12)",overflow:"hidden",maxHeight:180,overflowY:"auto",
+            }}>
+              <div style={{padding:"6px 10px",fontSize:10,fontWeight:700,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${C.border}`}}>Tag iemand</div>
+              {tagSuggesties.map(n=>(
+                <button key={n} onClick={()=>kiesTag(n)} style={{
+                  width:"100%",textAlign:"left",padding:"8px 10px",border:"none",background:"#fff",
+                  cursor:"pointer",fontSize:13,color:C.dark,display:"flex",alignItems:"center",gap:6,
+                }}
+                onMouseDown={e=>e.preventDefault()}>
+                  <span style={{color:C.green,fontWeight:700}}>@</span>{n}
+                </button>
+              ))}
+            </div>
+          )}
+          <div style={{display:"flex",gap:6,alignItems:"flex-end"}}>
+            <textarea
+              ref={inputRef}
+              value={tekst} onChange={e=>checkTag(e.target.value)}
+              onKeyDown={e=>{
+                if(e.key==="Escape"){ setTagQuery(null); return; }
+                if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); if(tagSuggesties.length>0){ kiesTag(tagSuggesties[0]); } else { verstuur(); } }
+              }}
+              placeholder={`Bericht als ${naam.trim()}… (typ @ om te taggen)`}
+              rows={1}
+              style={{flex:1,padding:"8px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:13,resize:"none",maxHeight:80,fontFamily:"inherit"}}
+            />
+            <button onClick={verstuur} disabled={bezig||!tekst.trim()} style={{
+              padding:"8px 14px",borderRadius:8,border:"none",
+              background:(bezig||!tekst.trim())?"#bdbdbd":C.green,color:"#fff",fontWeight:700,fontSize:13,
+              cursor:(bezig||!tekst.trim())?"default":"pointer",flexShrink:0,
+            }}>➤</button>
+          </div>
         </div>
       )}
       </>

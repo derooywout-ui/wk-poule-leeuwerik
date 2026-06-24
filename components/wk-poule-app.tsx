@@ -496,6 +496,7 @@ function ChatHoekje({ctx}){
   const [bezig,setBezig]=React.useState(false);
   const [chatAan,setChatAan]=React.useState(true);
   const [tagQuery,setTagQuery]=React.useState(null); // null = geen actieve @-tag; anders de tekst na @
+  const [online,setOnline]=React.useState(0);
   const lijstRef=React.useRef(null);
   const inputRef=React.useRef(null);
 
@@ -542,6 +543,22 @@ function ChatHoekje({ctx}){
     const t=setInterval(laadBerichten,10000);
     return()=>clearInterval(t);
   },[laadBerichten]);
+
+  // Aanwezigheid (heartbeat) — loopt ALTIJD zolang de site open is, ook als de chat dicht is.
+  // Werkt elke 30 sec de eigen last_seen bij en telt iedereen met een heartbeat in de laatste 90 sec.
+  const heartbeat=React.useCallback(async()=>{
+    // Eigen aanwezigheid bijwerken (upsert op client_id)
+    await sb("POST","online_presence?on_conflict=client_id",[{client_id:clientId,last_seen:new Date().toISOString()}]);
+    // Tel actieve bezoekers (last_seen binnen 90 sec)
+    const grens=new Date(Date.now()-90*1000).toISOString();
+    const rijen=await db.get("online_presence",`last_seen=gte.${grens}&select=client_id`);
+    if(rijen) setOnline(rijen.length);
+  },[clientId]);
+  React.useEffect(()=>{
+    heartbeat();
+    const t=setInterval(heartbeat,30000);
+    return()=>clearInterval(t);
+  },[heartbeat]);
 
   // Ongelezen-teller: berichten nieuwer dan laatst geopend, niet van jezelf
   React.useEffect(()=>{
@@ -667,6 +684,11 @@ function ChatHoekje({ctx}){
       }}>
         <span style={{fontSize:20}}>🗣️</span>
         <span>Praat mee!</span>
+        {online>0&&(
+          <span style={{display:"flex",alignItems:"center",gap:4,fontSize:13,fontWeight:600,opacity:0.85}}>
+            <span style={{color:"#1b5e20",fontSize:10}}>●</span>{online}
+          </span>
+        )}
         {ongelezen>0&&(
           <span style={{
             minWidth:22,height:22,padding:"0 6px",
@@ -690,7 +712,7 @@ function ChatHoekje({ctx}){
       <div style={{background:C.green,color:"#fff",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div style={{display:"flex",flexDirection:"column",lineHeight:1.2}}>
           <span style={{fontWeight:800,fontSize:15}}>🗣️ Kletshoekje</span>
-          <span style={{fontSize:11,opacity:0.85}}>{messages.length} bericht{messages.length===1?"":"en"}</span>
+          <span style={{fontSize:11,opacity:0.85}}>{messages.length} bericht{messages.length===1?"":"en"}{online>0&&<span> · <span style={{color:"#a5d6a7"}}>●</span> {online} online</span>}</span>
         </div>
         <button onClick={sluitChat} aria-label="Sluiten" style={{background:"none",border:"none",color:"#fff",fontSize:20,cursor:"pointer",lineHeight:1}}>✕</button>
       </div>

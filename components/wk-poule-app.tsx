@@ -588,22 +588,23 @@ function ChatHoekje({ctx}){
     return d.toLocaleDateString("nl-NL",{day:"numeric",month:"short"})+" "+tijd;
   }
 
-  // Bubble (dicht)
+  // Bubble (dicht) — gele pill, duidelijk anders dan Louis' groene cirkel
   if(!open){
     return(
       <button onClick={openChat} aria-label="Open kletshoekje" style={{
         position:"fixed",bottom:20,left:20,zIndex:9998,
-        width:56,height:56,borderRadius:"50%",border:"none",cursor:"pointer",
-        background:C.green,color:"#fff",fontSize:24,
+        height:52,padding:"0 18px",borderRadius:26,border:"none",cursor:"pointer",
+        background:C.yellow,color:C.dark,fontSize:15,fontWeight:800,
         boxShadow:"0 4px 14px rgba(0,0,0,0.25)",
-        display:"flex",alignItems:"center",justifyContent:"center",
+        display:"flex",alignItems:"center",gap:8,
       }}>
-        💬
+        <span style={{fontSize:20}}>🗣️</span>
+        <span>Praat mee!</span>
         {ongelezen>0&&(
           <span style={{
-            position:"absolute",top:-2,right:-2,minWidth:20,height:20,padding:"0 5px",
-            borderRadius:10,background:"#e53935",color:"#fff",fontSize:11,fontWeight:700,
-            display:"flex",alignItems:"center",justifyContent:"center",border:"2px solid #fff",
+            minWidth:22,height:22,padding:"0 6px",
+            borderRadius:11,background:"#e53935",color:"#fff",fontSize:12,fontWeight:700,
+            display:"flex",alignItems:"center",justifyContent:"center",marginLeft:2,
           }}>{ongelezen>99?"99+":ongelezen}</span>
         )}
       </button>
@@ -621,7 +622,7 @@ function ChatHoekje({ctx}){
       {/* Header */}
       <div style={{background:C.green,color:"#fff",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div style={{display:"flex",flexDirection:"column",lineHeight:1.2}}>
-          <span style={{fontWeight:800,fontSize:15}}>💬 Kletshoekje</span>
+          <span style={{fontWeight:800,fontSize:15}}>🗣️ Kletshoekje</span>
           <span style={{fontSize:11,opacity:0.85}}>{messages.length} bericht{messages.length===1?"":"en"}</span>
         </div>
         <button onClick={sluitChat} aria-label="Sluiten" style={{background:"none",border:"none",color:"#fff",fontSize:20,cursor:"pointer",lineHeight:1}}>✕</button>

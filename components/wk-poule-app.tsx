@@ -484,6 +484,226 @@ function LouisChatbot(){
   );
 }
 
+// ─── KLETSHOEKJE (chat) ───────────────────────────────────────────────────────
+function ChatHoekje({ctx}){
+  const C=COLORS;
+  const [open,setOpen]=React.useState(false);
+  const [messages,setMessages]=React.useState([]);
+  const [tekst,setTekst]=React.useState("");
+  const [naam,setNaam]=React.useState("");
+  const [naamGekozen,setNaamGekozen]=React.useState(false);
+  const [laatstGezien,setLaatstGezien]=React.useState(0); // timestamp ms van laatst geopend
+  const [bezig,setBezig]=React.useState(false);
+  const [chatAan,setChatAan]=React.useState(true);
+  const lijstRef=React.useRef(null);
+
+  // client_id: stabiele browser-id voor "eigen bericht verwijderen"
+  const clientId=React.useMemo(()=>{
+    try{
+      let c=localStorage.getItem("wk_chat_client");
+      if(!c){ c="c_"+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem("wk_chat_client",c); }
+      return c;
+    }catch(e){ return "c_anon"; }
+  },[]);
+
+  // Bepaal de afzendernaam: ingelogd → automatisch; anders gekozen naam uit localStorage
+  const ingelogdeNaam = ctx.currentUser ? `${ctx.currentUser.first_name} ${ctx.currentUser.last_name}` : null;
+  React.useEffect(()=>{
+    if(ingelogdeNaam){ setNaam(ingelogdeNaam); setNaamGekozen(true); return; }
+    try{
+      const opgeslagen=localStorage.getItem("wk_chat_name");
+      if(opgeslagen){ setNaam(opgeslagen); setNaamGekozen(true); }
+    }catch(e){}
+  },[ingelogdeNaam]);
+
+  // Berichten ophalen (polling elke 10 sec) + chat-status meelezen
+  const laadBerichten=React.useCallback(async()=>{
+    const data=await db.get("chat_messages","select=*&order=created_at.desc&limit=200");
+    if(data) setMessages(data);
+    const setting=await db.get("app_settings","key=eq.chat_enabled&select=value");
+    if(setting) setChatAan(setting.length===0 || setting[0].value==="true");
+  },[]);
+  React.useEffect(()=>{
+    laadBerichten();
+    const t=setInterval(laadBerichten,10000);
+    return()=>clearInterval(t);
+  },[laadBerichten]);
+
+  // Ongelezen-teller: berichten nieuwer dan laatst geopend, niet van jezelf
+  React.useEffect(()=>{
+    try{ const v=localStorage.getItem("wk_chat_seen"); if(v) setLaatstGezien(parseInt(v)||0); }catch(e){}
+  },[]);
+  const ongelezen = messages.filter(m=>{
+    const t=new Date(m.created_at).getTime();
+    return t>laatstGezien && m.client_id!==clientId;
+  }).length;
+
+  function openChat(){
+    setOpen(true);
+    const nu=Date.now();
+    setLaatstGezien(nu);
+    try{ localStorage.setItem("wk_chat_seen",String(nu)); }catch(e){}
+  }
+  function sluitChat(){ setOpen(false); }
+
+  function kiesNaam(){
+    const n=naam.trim();
+    if(!n) return;
+    try{ localStorage.setItem("wk_chat_name",n); }catch(e){}
+    setNaamGekozen(true);
+  }
+
+  async function verstuur(){
+    const m=tekst.trim();
+    if(!m || bezig || !chatAan) return;
+    if(!naamGekozen) return;
+    setBezig(true);
+    const nieuw={
+      author_name: naam.trim(),
+      participant_id: ctx.currentUser ? ctx.currentUser.id : null,
+      client_id: clientId,
+      message: m,
+    };
+    const res=await db.insert("chat_messages",[nieuw]);
+    if(res){ setTekst(""); await laadBerichten(); }
+    setBezig(false);
+  }
+
+  async function verwijder(id){
+    if(!confirm("Dit bericht verwijderen?")) return;
+    await db.delete("chat_messages",`id=eq.${id}`);
+    await laadBerichten();
+  }
+
+  function magVerwijderen(m){
+    return ctx.isAdmin || m.client_id===clientId;
+  }
+
+  function tijdLabel(iso){
+    const d=new Date(iso);
+    const nu=new Date();
+    const zelfdeDag=d.toDateString()===nu.toDateString();
+    const tijd=d.toLocaleTimeString("nl-NL",{hour:"2-digit",minute:"2-digit"});
+    if(zelfdeDag) return tijd;
+    return d.toLocaleDateString("nl-NL",{day:"numeric",month:"short"})+" "+tijd;
+  }
+
+  // Bubble (dicht)
+  if(!open){
+    return(
+      <button onClick={openChat} aria-label="Open kletshoekje" style={{
+        position:"fixed",bottom:20,left:20,zIndex:9998,
+        width:56,height:56,borderRadius:"50%",border:"none",cursor:"pointer",
+        background:C.green,color:"#fff",fontSize:24,
+        boxShadow:"0 4px 14px rgba(0,0,0,0.25)",
+        display:"flex",alignItems:"center",justifyContent:"center",
+      }}>
+        💬
+        {ongelezen>0&&(
+          <span style={{
+            position:"absolute",top:-2,right:-2,minWidth:20,height:20,padding:"0 5px",
+            borderRadius:10,background:"#e53935",color:"#fff",fontSize:11,fontWeight:700,
+            display:"flex",alignItems:"center",justifyContent:"center",border:"2px solid #fff",
+          }}>{ongelezen>99?"99+":ongelezen}</span>
+        )}
+      </button>
+    );
+  }
+
+  // Paneel (open)
+  return(
+    <div style={{
+      position:"fixed",bottom:20,left:20,zIndex:9998,
+      width:"min(360px, calc(100vw - 40px))",height:"min(520px, calc(100vh - 100px))",
+      background:"#fff",borderRadius:14,boxShadow:"0 8px 30px rgba(0,0,0,0.3)",
+      display:"flex",flexDirection:"column",overflow:"hidden",border:`1px solid ${C.border}`,
+    }}>
+      {/* Header */}
+      <div style={{background:C.green,color:"#fff",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{display:"flex",flexDirection:"column",lineHeight:1.2}}>
+          <span style={{fontWeight:800,fontSize:15}}>💬 Kletshoekje</span>
+          <span style={{fontSize:11,opacity:0.85}}>{messages.length} bericht{messages.length===1?"":"en"}</span>
+        </div>
+        <button onClick={sluitChat} aria-label="Sluiten" style={{background:"none",border:"none",color:"#fff",fontSize:20,cursor:"pointer",lineHeight:1}}>✕</button>
+      </div>
+
+      {/* Naamkiezer (alleen als niet ingelogd én nog geen naam gekozen) */}
+      {chatAan&&!naamGekozen&&(
+        <div style={{padding:16,borderBottom:`1px solid ${C.border}`,background:"#f9fffe"}}>
+          <div style={{fontSize:13,fontWeight:600,marginBottom:8,color:C.dark}}>Hoe heet je?</div>
+          <div style={{display:"flex",gap:6}}>
+            <input
+              value={naam} onChange={e=>setNaam(e.target.value)}
+              onKeyDown={e=>{if(e.key==="Enter")kiesNaam();}}
+              placeholder="Je naam…"
+              style={{flex:1,padding:"8px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:13}}
+            />
+            <button onClick={kiesNaam} style={{padding:"8px 14px",borderRadius:8,border:"none",background:C.green,color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>OK</button>
+          </div>
+        </div>
+      )}
+
+      {!chatAan?(
+        <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,textAlign:"center",gap:8}}>
+          <div style={{fontSize:34}}>🔕</div>
+          <div style={{fontSize:14,fontWeight:600,color:C.dark}}>Chat is op dit moment niet beschikbaar</div>
+          <div style={{fontSize:12,color:C.gray}}>De beheerder heeft het kletshoekje tijdelijk uitgezet.</div>
+        </div>
+      ):(
+      <>
+      {/* Berichtenlijst (nieuwste boven) */}
+      <div ref={lijstRef} style={{flex:1,overflowY:"auto",padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}}>
+        {messages.length===0&&(
+          <div style={{textAlign:"center",color:C.gray,fontSize:13,marginTop:20}}>Nog geen berichten. Wees de eerste! 👋</div>
+        )}
+        {messages.map(m=>{
+          const vanMij=m.client_id===clientId;
+          return(
+            <div key={m.id} style={{
+              background:vanMij?"#e8f5ee":"#f4f4f4",borderRadius:10,padding:"8px 10px",
+              border:`1px solid ${vanMij?"#b2dfdb":"#e8e8e8"}`,
+            }}>
+              <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:2}}>
+                <span style={{fontWeight:700,fontSize:12,color:C.green}}>
+                  {m.author_name}{m.participant_id?"":" ·"}
+                  {!m.participant_id&&<span style={{fontWeight:400,fontSize:10,color:C.gray}}> gast</span>}
+                </span>
+                <span style={{fontSize:10,color:C.gray,flexShrink:0}}>{tijdLabel(m.created_at)}</span>
+              </div>
+              <div style={{fontSize:13,color:C.dark,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{m.message}</div>
+              {magVerwijderen(m)&&(
+                <div style={{textAlign:"right",marginTop:2}}>
+                  <button onClick={()=>verwijder(m.id)} style={{background:"none",border:"none",color:"#c62828",fontSize:11,cursor:"pointer",padding:0}}>verwijderen</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Invoer */}
+      {naamGekozen&&(
+        <div style={{borderTop:`1px solid ${C.border}`,padding:10,display:"flex",gap:6,alignItems:"flex-end"}}>
+          <textarea
+            value={tekst} onChange={e=>setTekst(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();verstuur();}}}
+            placeholder={`Bericht als ${naam.trim()}…`}
+            rows={1}
+            style={{flex:1,padding:"8px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:13,resize:"none",maxHeight:80,fontFamily:"inherit"}}
+          />
+          <button onClick={verstuur} disabled={bezig||!tekst.trim()} style={{
+            padding:"8px 14px",borderRadius:8,border:"none",
+            background:(bezig||!tekst.trim())?"#bdbdbd":C.green,color:"#fff",fontWeight:700,fontSize:13,
+            cursor:(bezig||!tekst.trim())?"default":"pointer",flexShrink:0,
+          }}>➤</button>
+        </div>
+      )}
+      </>
+      )}
+    </div>
+  );
+}
+
 export default function App(){
   const [view,setView]=useState("home");
   const [navTarget,setNavTarget]=useState(null); // {matchId, date} voor directe navigatie
@@ -654,6 +874,7 @@ export default function App(){
   return(
     <div style={S.app}>
       <LouisChatbot/>
+      <ChatHoekje ctx={ctx}/>
       <header style={S.header}>
         <div style={{display:"flex",alignItems:"center",gap:20}}>
           <div style={{display:"flex",flexDirection:"column",justifyContent:"center",lineHeight:1.2}}>
@@ -4226,6 +4447,33 @@ function AdminInstellingen({ctx}){
   const [liveForm,setLiveForm]=React.useState({home_team:"Nederland",away_team:"Duitsland",home_goals:1,away_goals:0,minute:67,status:"IN_PLAY"});
   const [liveSaving,setLiveSaving]=React.useState(false);
   const [liveMsg,setLiveMsg]=React.useState("");
+  const [chatAan,setChatAan]=React.useState(true);
+  const [chatBezig,setChatBezig]=React.useState(false);
+  const [chatMsg,setChatMsg]=React.useState("");
+
+  // Huidige chat-status ophalen
+  React.useEffect(()=>{
+    (async()=>{
+      const rows=await db.get("app_settings","key=eq.chat_enabled&select=value");
+      if(rows&&rows.length>0) setChatAan(rows[0].value==="true");
+    })();
+  },[]);
+
+  async function toggleChat(){
+    setChatBezig(true);
+    const nieuw=!chatAan;
+    // Upsert de instelling (update bestaande rij, of insert als 'ie er nog niet is)
+    const bestaand=await db.get("app_settings","key=eq.chat_enabled&select=key");
+    if(bestaand&&bestaand.length>0){
+      await db.update("app_settings","key=eq.chat_enabled",{value:nieuw?"true":"false",updated_at:new Date().toISOString()});
+    }else{
+      await db.insert("app_settings",[{key:"chat_enabled",value:nieuw?"true":"false"}]);
+    }
+    setChatAan(nieuw);
+    setChatBezig(false);
+    setChatMsg(nieuw?"✅ Kletshoekje staat AAN voor alle deelnemers":"🔕 Kletshoekje staat UIT");
+    setTimeout(()=>setChatMsg(""),4000);
+  }
 
   function toggle(){
     const next=!override;
@@ -4277,6 +4525,22 @@ function AdminInstellingen({ctx}){
 
   return(
     <div style={{maxWidth:520}}>
+      {/* Kletshoekje aan/uit (geldt voor alle deelnemers) */}
+      <div style={S.card}>
+        <h3 style={{...S.h3,marginBottom:4}}>💬 Kletshoekje</h3>
+        <p style={{fontSize:13,color:C.gray,marginBottom:16}}>Zet de chat aan of uit voor álle deelnemers. Bij uit blijft de chatknop zichtbaar, maar verschijnt de melding dat de chat niet beschikbaar is.</p>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",background:chatAan?"#e8f5ee":"#f9f9f9",border:`1px solid ${chatAan?C.green:C.border}`,borderRadius:8}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:14,color:C.dark}}>Kletshoekje {chatAan?"staat AAN":"staat UIT"}</div>
+            <div style={{fontSize:12,color:C.gray,marginTop:2}}>{chatAan?"Deelnemers kunnen berichten plaatsen en lezen":"Berichten plaatsen is uitgeschakeld"}</div>
+          </div>
+          <button onClick={toggleChat} disabled={chatBezig} style={{...S.btn(chatAan?"yellow":"green"),minWidth:90}}>
+            {chatBezig?"…":chatAan?"Uitzetten":"Aanzetten"}
+          </button>
+        </div>
+        {chatMsg&&<div style={{fontSize:13,fontWeight:600,color:C.green,marginTop:10}}>{chatMsg}</div>}
+      </div>
+
       {/* Deadline override */}
       <div style={S.card}>
         <h3 style={{...S.h3,marginBottom:4}}>🛠️ Testinstellingen</h3>

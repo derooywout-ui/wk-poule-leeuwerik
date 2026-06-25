@@ -3201,6 +3201,50 @@ function DeelnemerOverlay({p, ctx, onClose}){
   const notPlayed=allGroupMatches.filter(m=>!m.hasResult&&m.hasPred);
   const totalPts=played.reduce((s,m)=>s+(m.pts||0),0);
 
+  // KO-wedstrijden die nog te spelen zijn maar waar deze deelnemer al een voorspelling voor heeft.
+  // Korte ronde-labels voor weergave vooraan (i.p.v. "Gr X").
+  const KO_KORT={r16:"16e f",r8:"8e f",r4:"¼ f",r2:"½ f",r3:"Troost",r1:"Finale"};
+  const notPlayedKO=(ctx.koMatches||[])
+    .map(m=>{
+      const kp=koPred[m.id];
+      const hasPred=kp&&kp.home!==undefined&&kp.home!==null&&kp.away!==undefined&&kp.away!==null;
+      const hasResult=m.home_goals!==null&&m.home_goals!==undefined;
+      return {m,kp,hasPred,hasResult};
+    })
+    .filter(x=>x.hasPred&&!x.hasResult&&x.m.home_team&&x.m.away_team)
+    .sort((a,b)=>{
+      const ta=a.m.kickoff?new Date(a.m.kickoff).getTime():Infinity;
+      const tb=b.m.kickoff?new Date(b.m.kickoff).getTime():Infinity;
+      return ta-tb;
+    });
+
+  // Gespeelde KO-wedstrijden (met uitslag) → in hetzelfde format als poule-played,
+  // maar met isKO-vlag en KO-puntendrempels (10 exact / 6 toto / 0).
+  const playedKO=(ctx.koMatches||[])
+    .filter(m=>m.home_goals!==null&&m.home_goals!==undefined&&m.home_team&&m.away_team)
+    .map(m=>{
+      const kp=koPred[m.id];
+      const hasPred=kp&&kp.home!==undefined&&kp.home!==null&&kp.away!==undefined&&kp.away!==null;
+      let pts=null;
+      if(hasPred){
+        const exact=parseInt(kp.home)===parseInt(m.home_goals)&&parseInt(kp.away)===parseInt(m.away_goals);
+        const toto=calcToto(kp.home,kp.away)===calcToto(m.home_goals,m.away_goals);
+        pts=exact?KO_EXACT_PTS:toto?KO_TOTO_PTS:0;
+      }
+      return {
+        isKO:true,
+        mid:m.id,
+        koLabel:KO_KORT[m.round_id]||"KO",
+        t1:{name:m.home_team}, t2:{name:m.away_team},
+        result:{home:m.home_goals,away:m.away_goals},
+        pp:kp, hasPred, pts,
+        dt:m.kickoff?new Date(m.kickoff):new Date(2099,0,1),
+      };
+    });
+
+  // Combineer poule + KO, chronologisch
+  const playedAll=[...played.map(m=>({...m,isKO:false})),...playedKO].sort((a,b)=>a.dt-b.dt);
+
   // Bereken counts voor ratio's
   let gTotoCount=0,gExactCount=0;
   played.forEach(m=>{
@@ -3463,14 +3507,18 @@ function DeelnemerOverlay({p, ctx, onClose}){
 
           {/* Gespeelde wedstrijden */}
           <div style={{fontWeight:700,fontSize:13,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Gespeelde wedstrijden</div>
-          {played.length===0&&<p style={{fontSize:13,color:C.gray}}>Nog geen gespeelde wedstrijden.</p>}
-          {played.map(({mid,grp,t1,t2,result,pp,hasPred,pts})=>{
-            const ptsBg=pts===5?"#e8f5ee":pts===3?"#fff8e1":pts===0?"#fdecea":"#f5f5f5";
-            const ptsColor=pts===5?C.green:pts===3?"#7c5800":pts===0?"#c62828":C.gray;
-            const ptsLabel=pts===5?"🎯 5pt":pts===3?"✅ 3pt":pts===0?"❌ 0pt":"—";
+          {playedAll.length===0&&<p style={{fontSize:13,color:C.gray}}>Nog geen gespeelde wedstrijden.</p>}
+          {playedAll.map(({mid,grp,t1,t2,result,pp,hasPred,pts,isKO,koLabel})=>{
+            // Puntendrempels verschillen: KO = 10 exact / 6 toto, poule = 5 exact / 3 toto
+            const exactPt=isKO?KO_EXACT_PTS:5;
+            const totoPt=isKO?KO_TOTO_PTS:3;
+            const ptsBg=pts===exactPt?"#e8f5ee":pts===totoPt?"#fff8e1":pts===0?"#fdecea":"#f5f5f5";
+            const ptsColor=pts===exactPt?C.green:pts===totoPt?"#7c5800":pts===0?"#c62828":C.gray;
+            const ptsLabel=pts===exactPt?`🎯 ${exactPt}pt`:pts===totoPt?`✅ ${totoPt}pt`:pts===0?"❌ 0pt":"—";
+            const ptsBorder=pts===exactPt?"#b2dfdb":pts===totoPt?"#ffe082":pts===0?"#ef9a9a":"#eee";
             return(
-              <div key={mid} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:7,marginBottom:6,background:ptsBg,border:`1px solid ${pts===5?"#b2dfdb":pts===3?"#ffe082":pts===0?"#ef9a9a":"#eee"}`}}>
-                <span style={{fontSize:10,color:C.gray,width:32,flexShrink:0}}>Gr {grp}</span>
+              <div key={mid} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:7,marginBottom:6,background:ptsBg,border:`1px solid ${ptsBorder}`}}>
+                <span style={{fontSize:10,color:isKO?C.green:C.gray,fontWeight:isKO?700:400,width:32,flexShrink:0}}>{isKO?koLabel:`Gr ${grp}`}</span>
                 <div style={{flex:1,fontSize:13}}>
                   <span style={{fontWeight:600}}>{t1.name}</span>
                   <span style={{color:C.gray,margin:"0 4px"}}>vs</span>
@@ -3492,7 +3540,7 @@ function DeelnemerOverlay({p, ctx, onClose}){
           })}
 
           {/* Nog niet gespeeld maar wel voorspeld */}
-          {notPlayed.length>0&&(
+          {(notPlayed.length>0||notPlayedKO.length>0)&&(
             <>
               <div style={{fontWeight:700,fontSize:13,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginTop:16,marginBottom:8}}>
                 Nog te spelen (voorspelling)
@@ -3508,6 +3556,21 @@ function DeelnemerOverlay({p, ctx, onClose}){
                   <div style={{fontSize:12,textAlign:"center",minWidth:60}}>
                     <div style={{fontSize:11}}>Voorspelling</div>
                     <div style={{fontWeight:600,color:C.gray}}>{pp.home}–{pp.away}</div>
+                  </div>
+                  <div style={{minWidth:52,textAlign:"right",fontSize:11,color:C.gray}}>nog open</div>
+                </div>
+              ))}
+              {notPlayedKO.map(({m,kp})=>(
+                <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:7,marginBottom:5,background:"#f7f7f7",border:"1px solid #e0e0e0",opacity:0.75}}>
+                  <span style={{fontSize:10,color:C.green,fontWeight:700,width:32,flexShrink:0}}>{KO_KORT[m.round_id]||"KO"}</span>
+                  <div style={{flex:1,fontSize:13,color:C.gray}}>
+                    <span>{m.home_team}</span>
+                    <span style={{margin:"0 4px"}}>vs</span>
+                    <span>{m.away_team}</span>
+                  </div>
+                  <div style={{fontSize:12,textAlign:"center",minWidth:60}}>
+                    <div style={{fontSize:11}}>Voorspelling</div>
+                    <div style={{fontWeight:600,color:C.gray}}>{kp.home}–{kp.away}</div>
                   </div>
                   <div style={{minWidth:52,textAlign:"right",fontSize:11,color:C.gray}}>nog open</div>
                 </div>

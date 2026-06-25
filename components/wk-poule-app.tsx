@@ -1102,6 +1102,7 @@ function GroepsstandMini({grp,teams,matchPredictions}){
 // ─── KO PREDICT TAB ──────────────────────────────────────────────────────────
 function KOPredictTab({ctx, currentUser, saving, setSaving, saved, setSaved}){
   const [localKoPred, setLocalKoPred] = useState({});
+  const [editingId, setEditingId] = useState(null); // welke match_id wordt nu bewerkt
 
   useEffect(()=>{
     setLocalKoPred(ctx.koPredictions[currentUser.id]||{});
@@ -1135,7 +1136,7 @@ function KOPredictTab({ctx, currentUser, saving, setSaving, saved, setSaved}){
       kop.forEach(r=>{if(!k[r.participant_id])k[r.participant_id]={};k[r.participant_id][r.match_id]={home:r.home_goals,away:r.away_goals};});
       ctx.setKoPredictions(k);
     }
-    setSaving(false);setSaved(true);setTimeout(()=>setSaved(false),2000);
+    setSaving(false);setSaved(true);setEditingId(null);setTimeout(()=>setSaved(false),2000);
   }
 
   const matchesByRound = KO_ROUNDS.map(round=>({
@@ -1166,6 +1167,16 @@ function KOPredictTab({ctx, currentUser, saving, setSaving, saved, setSaved}){
             const result = match.home_goals!==null&&match.home_goals!==undefined;
             const saved_pred = ctx.koPredictions[currentUser.id]?.[match.id];
             const hasSaved = saved_pred&&saved_pred.home!==undefined&&saved_pred.home!==null;
+            const beideLanden = match.home_team&&match.away_team;
+            const isEditing = editingId===match.id;
+            // Bewerkbaar: beide landen bekend, vóór deadline, en (nog niet opgeslagen OF in wijzig-modus)
+            const bewerkbaar = open && (!hasSaved || isEditing);
+            // Ingevulde lokale voorspelling → toon "[land] wint"
+            const pHome=(p.home===undefined||p.home===null||p.home==="")?null:parseInt(p.home,10);
+            const pAway=(p.away===undefined||p.away===null||p.away==="")?null:parseInt(p.away,10);
+            const filled = pHome!==null&&pAway!==null;
+            let totoLabel=null;
+            if(filled&&beideLanden){const t=calcToto(pHome,pAway);totoLabel=t==="W"?`${match.home_team} wint`:t==="L"?`${match.away_team} wint`:"Gelijkspel";}
 
             // Points earned
             let pts = null;
@@ -1175,21 +1186,32 @@ function KOPredictTab({ctx, currentUser, saving, setSaving, saved, setSaved}){
               pts=exact?KO_EXACT_PTS:toto?KO_TOTO_PTS:0;
             }
 
+            // Kleurcodering: groen=opgeslagen, wit=te voorspellen, grijs=nog niet mogelijk
+            const bgKleur = !beideLanden ? "#f7f7f7" : hasSaved ? "#f0faf6" : "#fff";
+            const randKleur = !beideLanden ? "#e0e0e0" : hasSaved ? COLORS.green : COLORS.border;
+
             return(
-              <div key={match.id} style={{border:`1px solid ${!match.home_team||!match.away_team?"#e0e0e0":hasSaved?COLORS.green:COLORS.border}`,borderRadius:10,padding:"12px 14px",marginBottom:10,background:!match.home_team||!match.away_team?"#f7f7f7":hasSaved?"#f0faf6":"#fff"}}>
+              <div key={match.id} style={{border:`1px solid ${randKleur}`,borderRadius:10,padding:"12px 14px",marginBottom:10,background:bgKleur}}>
                 {/* Match info */}
                 <div style={{fontSize:11,color:COLORS.gray,marginBottom:8,display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}>
                   <span style={{fontWeight:600,color:COLORS.dark}}>#{match.match_num}</span>
                   {match.kickoff&&<span>📅 {new Date(match.kickoff).toLocaleDateString("nl-NL",{day:"numeric",month:"short"})} · {new Date(match.kickoff).toLocaleTimeString("nl-NL",{hour:"2-digit",minute:"2-digit"})} CET</span>}
                   {match.city&&<span>📍 {match.city}</span>}
-                  {!match.home_team&&<span style={{color:COLORS.gray,fontStyle:"italic"}}>Landen nog niet bekend</span>}
-                  {match.home_team&&!open&&!result&&<span style={{color:"#c62828",fontWeight:600}}>🔒 Gesloten</span>}
+                  {!beideLanden&&<span style={{color:COLORS.gray,fontStyle:"italic"}}>Landen nog niet bekend</span>}
+                  {beideLanden&&!hasSaved&&open&&<span style={{color:COLORS.green,fontWeight:600}}>Voorspellen mogelijk</span>}
+                  {beideLanden&&!open&&!result&&<span style={{color:"#c62828",fontWeight:600}}>🔒 Gesloten</span>}
                   {result&&<span style={{color:COLORS.green,fontWeight:600}}>Uitslag: {match.home_goals}–{match.away_goals}</span>}
-                  {pts!==null&&<span style={S.badge}>{pts} pt</span>}
+                  {pts!==null&&(
+                    <span style={{padding:"2px 8px",borderRadius:4,fontSize:11,fontWeight:700,
+                      background:pts===KO_EXACT_PTS?"#e8f5ee":pts===KO_TOTO_PTS?"#fff8e1":"#fdecea",
+                      color:pts===KO_EXACT_PTS?COLORS.green:pts===KO_TOTO_PTS?"#7c5800":"#c62828"}}>
+                      {pts===KO_EXACT_PTS?`🎯 ${KO_EXACT_PTS}pt`:pts===KO_TOTO_PTS?`✅ ${KO_TOTO_PTS}pt`:"❌ 0pt"}
+                    </span>
+                  )}
                 </div>
 
                 {/* Teams + score */}
-                {!match.home_team||!match.away_team ? (
+                {!beideLanden ? (
                   // Landen nog niet (volledig) bekend
                   <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:16,padding:"8px 0"}}>
                     <div style={{display:"flex",alignItems:"center",gap:6,opacity:match.home_team?1:0.4}}>
@@ -1210,21 +1232,69 @@ function KOPredictTab({ctx, currentUser, saving, setSaving, saved, setSaved}){
                     </span>
                   </div>
                 ):(
-                  <div style={{display:"grid",gridTemplateColumns:"1fr auto auto auto 1fr auto",alignItems:"center",gap:8}}>
-                    <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
-                      <span style={{fontWeight:600,fontSize:13}}>{match.home_team}</span>
-                      <FlagImg name={match.home_team} size={22}/>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr auto auto auto 1fr",alignItems:"center",gap:8}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
+                        <span style={{fontWeight:600,fontSize:13}}>{match.home_team}</span>
+                        <FlagImg name={match.home_team} size={22}/>
+                      </div>
+                      <ScoreStepper value={p.home} onChange={v=>setKoScore(match.id,"home",v)} disabled={!bewerkbaar}/>
+                      <span style={{fontWeight:800,color:COLORS.gray,fontSize:13,textAlign:"center"}}>–</span>
+                      <ScoreStepper value={p.away} onChange={v=>setKoScore(match.id,"away",v)} disabled={!bewerkbaar}/>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <FlagImg name={match.away_team} size={22}/>
+                        <span style={{fontWeight:600,fontSize:13}}>{match.away_team}</span>
+                      </div>
                     </div>
-                    <ScoreStepper value={p.home} onChange={v=>setKoScore(match.id,"home",v)} disabled={!open}/>
-                    <span style={{fontWeight:800,color:COLORS.gray,fontSize:13,textAlign:"center"}}>–</span>
-                    <ScoreStepper value={p.away} onChange={v=>setKoScore(match.id,"away",v)} disabled={!open}/>
-                    <div style={{display:"flex",alignItems:"center",gap:6}}>
-                      <FlagImg name={match.away_team} size={22}/>
-                      <span style={{fontWeight:600,fontSize:13}}>{match.away_team}</span>
-                    </div>
-                    <div style={{minWidth:80}}>
-                      {open&&<button style={{...S.btn("green"),fontSize:12,padding:"6px 10px"}} onClick={()=>saveKoMatch(match)} disabled={saving}>💾</button>}
-                      {hasSaved&&!open&&<span style={S.tag("green")}>✓ {saved_pred.home}–{saved_pred.away}</span>}
+
+                    {/* Wint-label + actieknoppen */}
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:6,flexWrap:"wrap"}}>
+                      {totoLabel&&(
+                        <span style={{background:"#e8f5ee",color:COLORS.green,border:`1px solid #b2dfdb`,
+                          borderRadius:5,padding:"3px 10px",fontSize:12,fontWeight:700}}>
+                          {totoLabel}
+                        </span>
+                      )}
+                      {/* Opslaan (nog niet opgeslagen, open) */}
+                      {open&&!hasSaved&&(
+                        <button onClick={()=>saveKoMatch(match)} disabled={saving} style={{
+                          padding:"4px 14px",borderRadius:6,border:"none",cursor:"pointer",
+                          background:COLORS.green,color:"#fff",fontSize:12,fontWeight:700,
+                          boxShadow:"0 1px 3px rgba(0,99,58,0.3)"
+                        }}>💾 Opslaan</button>
+                      )}
+                      {/* Opgeslagen + wijzigen (open, opgeslagen, niet aan het bewerken) */}
+                      {open&&hasSaved&&!isEditing&&(
+                        <>
+                          <span style={{fontSize:12,color:COLORS.green,fontWeight:600}}>✓ Opgeslagen</span>
+                          <button onClick={()=>{setEditingId(match.id);setSaved(false);}} style={{
+                            background:"none",border:`1px solid ${COLORS.gray}`,cursor:"pointer",
+                            fontSize:11,color:COLORS.gray,padding:"3px 10px",borderRadius:5
+                          }}>✏️ Wijzigen</button>
+                        </>
+                      )}
+                      {/* Opslaan + annuleren (open, opgeslagen, aan het bewerken) */}
+                      {open&&hasSaved&&isEditing&&(
+                        <>
+                          <button onClick={()=>saveKoMatch(match)} disabled={saving} style={{
+                            padding:"4px 14px",borderRadius:6,border:"none",cursor:"pointer",
+                            background:COLORS.green,color:"#fff",fontSize:12,fontWeight:700,
+                            boxShadow:"0 1px 3px rgba(0,99,58,0.3)"
+                          }}>💾 Opslaan</button>
+                          <button onClick={()=>{setEditingId(null);setLocalKoPred(prev=>({...prev,[match.id]:saved_pred}));}} style={{
+                            background:"none",border:`1px solid ${COLORS.gray}`,cursor:"pointer",
+                            fontSize:11,color:COLORS.gray,padding:"3px 10px",borderRadius:5
+                          }}>✕ Annuleren</button>
+                        </>
+                      )}
+                      {/* Gesloten, wel opgeslagen → toon opgeslagen voorspelling */}
+                      {!open&&hasSaved&&(
+                        <span style={{fontSize:12,color:"#aaa",fontWeight:600}}>✓ Opgeslagen: {saved_pred.home}–{saved_pred.away}</span>
+                      )}
+                      {/* Gesloten, niet opgeslagen → niets meer mogelijk */}
+                      {!open&&!hasSaved&&!result&&(
+                        <span style={{fontSize:12,color:"#c62828",fontWeight:600}}>Niet meer te voorspellen</span>
+                      )}
                     </div>
                   </div>
                 )}

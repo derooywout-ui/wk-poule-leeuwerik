@@ -100,11 +100,37 @@ function InsightNaam({p, onSelect}){
 
 function FlagImg({ name, size=20 }) {
   const code = FLAG_CODES[name];
-  if (!code) return <span>🏳️</span>;
-  const url = code.length > 2
-    ? `https://flagicons.lipis.dev/flags/4x3/${code}.svg`
-    : `https://flagcdn.com/w40/${code}.png`;
-  return <img src={url} alt={name} style={{width:size,height:"auto",borderRadius:2,verticalAlign:"middle",display:"inline-block"}}/>;
+  // Bouw een lijst van bronnen die we achter elkaar proberen als er één faalt.
+  // 1) flagcdn PNG (primair, snel), 2) lipis SVG (achtervang), zodat een
+  // tijdelijke CDN-hapering bij één bron niet leidt tot een kapot vlag-icoon.
+  const bronnen = React.useMemo(()=>{
+    if(!code) return [];
+    if(code.length>2){
+      // Bijzondere codes (gb-sct, gb-eng) bestaan alleen als SVG bij lipis
+      return [`https://flagicons.lipis.dev/flags/4x3/${code}.svg`];
+    }
+    return [
+      `https://flagcdn.com/w40/${code}.png`,
+      `https://flagicons.lipis.dev/flags/4x3/${code}.svg`,
+    ];
+  },[code]);
+
+  const [bronIdx, setBronIdx] = React.useState(0);
+  // Reset naar de eerste bron als het land wisselt
+  React.useEffect(()=>{ setBronIdx(0); },[code]);
+
+  if(!code || bronnen.length===0) return <span>🏳️</span>;
+  // Alle bronnen geprobeerd en gefaald → neutraal emoji i.p.v. kapot icoon
+  if(bronIdx>=bronnen.length) return <span style={{fontSize:size*0.9}}>🏳️</span>;
+
+  return (
+    <img
+      src={bronnen[bronIdx]}
+      alt={name}
+      onError={()=>setBronIdx(i=>i+1)}
+      style={{width:size,height:"auto",borderRadius:2,verticalAlign:"middle",display:"inline-block"}}
+    />
+  );
 }
 
 const WK_GROUPS = {

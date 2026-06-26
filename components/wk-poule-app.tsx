@@ -3525,23 +3525,29 @@ function DeelnemerOverlay({p, ctx, onClose}){
             const ptsLabel=pts===exactPt?`🎯 ${exactPt}pt`:pts===totoPt?`✅ ${totoPt}pt`:pts===0?"❌ 0pt":"—";
             const ptsBorder=pts===exactPt?"#b2dfdb":pts===totoPt?"#ffe082":pts===0?"#ef9a9a":"#eee";
             return(
-              <div key={mid} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:7,marginBottom:6,background:ptsBg,border:`1px solid ${ptsBorder}`}}>
-                <span style={{fontSize:10,color:isKO?C.green:C.gray,fontWeight:isKO?700:400,width:32,flexShrink:0}}>{isKO?koLabel:`Gr ${grp}`}</span>
-                <div style={{flex:1,fontSize:13}}>
-                  <span style={{fontWeight:600}}>{t1.name}</span>
-                  <span style={{color:C.gray,margin:"0 4px"}}>vs</span>
-                  <span style={{fontWeight:600}}>{t2.name}</span>
+              <div key={mid} style={{padding:"8px 10px",borderRadius:7,marginBottom:6,background:ptsBg,border:`1px solid ${ptsBorder}`}}>
+                {/* Regel 1: groep-label + teamnamen */}
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <span style={{fontSize:10,color:isKO?C.green:C.gray,fontWeight:isKO?700:400,width:38,flexShrink:0}}>{isKO?koLabel:`Gr ${grp}`}</span>
+                  <div style={{flex:1,fontSize:13,minWidth:0}}>
+                    <span style={{fontWeight:600}}>{t1.name}</span>
+                    <span style={{color:C.gray,margin:"0 4px"}}>vs</span>
+                    <span style={{fontWeight:600}}>{t2.name}</span>
+                  </div>
                 </div>
-                <div style={{fontSize:12,textAlign:"center",minWidth:60}}>
-                  <div style={{color:C.gray,fontSize:11}}>Uitslag</div>
-                  <div style={{fontWeight:700}}>{result.home}–{result.away}</div>
-                </div>
-                <div style={{fontSize:12,textAlign:"center",minWidth:60}}>
-                  <div style={{color:C.gray,fontSize:11}}>Voorspelling</div>
-                  <div style={{fontWeight:700,color:hasPred?C.dark:C.gray}}>{hasPred?`${pp.home}–${pp.away}`:"—"}</div>
-                </div>
-                <div style={{minWidth:52,textAlign:"right"}}>
-                  <span style={{fontSize:12,fontWeight:700,color:ptsColor}}>{ptsLabel}</span>
+                {/* Regel 2: uitslag / voorspelling / punten in vaste, gelijke kolommen */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",alignItems:"center",gap:8,paddingLeft:46}}>
+                  <div style={{fontSize:12}}>
+                    <div style={{color:C.gray,fontSize:10}}>Uitslag</div>
+                    <div style={{fontWeight:700}}>{result.home}–{result.away}</div>
+                  </div>
+                  <div style={{fontSize:12}}>
+                    <div style={{color:C.gray,fontSize:10}}>Voorspelling</div>
+                    <div style={{fontWeight:700,color:hasPred?C.dark:C.gray}}>{hasPred?`${pp.home}–${pp.away}`:"—"}</div>
+                  </div>
+                  <div style={{minWidth:56,textAlign:"right"}}>
+                    <span style={{fontSize:13,fontWeight:700,color:ptsColor,whiteSpace:"nowrap"}}>{ptsLabel}</span>
+                  </div>
                 </div>
               </div>
             );
@@ -3554,40 +3560,48 @@ function DeelnemerOverlay({p, ctx, onClose}){
                 Nog te spelen (voorspelling)
               </div>
               {notPlayed.map(({mid,grp,t1,t2,pp})=>(
-                <div key={mid} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:7,marginBottom:5,background:"#f7f7f7",border:"1px solid #e0e0e0",opacity:0.75}}>
-                  <span style={{fontSize:10,color:C.gray,width:32,flexShrink:0}}>Gr {grp}</span>
-                  <div style={{flex:1,fontSize:13,color:C.gray}}>
-                    <span>{t1.name}</span>
-                    <span style={{margin:"0 4px"}}>vs</span>
-                    <span>{t2.name}</span>
+                <div key={mid} style={{padding:"7px 10px",borderRadius:7,marginBottom:5,background:"#f7f7f7",border:"1px solid #e0e0e0",opacity:0.75}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                    <span style={{fontSize:10,color:C.gray,width:38,flexShrink:0}}>Gr {grp}</span>
+                    <div style={{flex:1,fontSize:13,color:C.gray,minWidth:0}}>
+                      <span>{t1.name}</span>
+                      <span style={{margin:"0 4px"}}>vs</span>
+                      <span>{t2.name}</span>
+                    </div>
                   </div>
-                  <div style={{fontSize:12,textAlign:"center",minWidth:60}}>
-                    <div style={{fontSize:11}}>Voorspelling</div>
-                    <div style={{fontWeight:600,color:C.gray}}>{pp.home}–{pp.away}</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"center",gap:8,paddingLeft:46}}>
+                    <div style={{fontSize:12}}>
+                      <div style={{color:C.gray,fontSize:10}}>Voorspelling</div>
+                      <div style={{fontWeight:600,color:C.gray}}>{pp.home}–{pp.away}</div>
+                    </div>
+                    <div style={{minWidth:56,textAlign:"right",fontSize:11,color:C.gray,whiteSpace:"nowrap"}}>nog open</div>
                   </div>
-                  <div style={{minWidth:52,textAlign:"right",fontSize:11,color:C.gray}}>nog open</div>
                 </div>
               ))}
               {notPlayedKO.map(({m,kp})=>{
                 const begonnen = m.kickoff ? new Date() >= new Date(m.kickoff) : false;
                 return(
-                <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:7,marginBottom:5,background:"#f7f7f7",border:"1px solid #e0e0e0",opacity:0.75}}>
-                  <span style={{fontSize:10,color:C.green,fontWeight:700,width:32,flexShrink:0}}>{KO_KORT[m.round_id]||"KO"}</span>
-                  <div style={{flex:1,fontSize:13,color:C.gray}}>
-                    <span>{m.home_team}</span>
-                    <span style={{margin:"0 4px"}}>vs</span>
-                    <span>{m.away_team}</span>
+                <div key={m.id} style={{padding:"7px 10px",borderRadius:7,marginBottom:5,background:"#f7f7f7",border:"1px solid #e0e0e0",opacity:0.75}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                    <span style={{fontSize:10,color:C.green,fontWeight:700,width:38,flexShrink:0}}>{KO_KORT[m.round_id]||"KO"}</span>
+                    <div style={{flex:1,fontSize:13,color:C.gray,minWidth:0}}>
+                      <span>{m.home_team}</span>
+                      <span style={{margin:"0 4px"}}>vs</span>
+                      <span>{m.away_team}</span>
+                    </div>
                   </div>
-                  <div style={{fontSize:12,textAlign:"center",minWidth:60}}>
-                    <div style={{fontSize:11}}>Voorspelling</div>
-                    {begonnen?(
-                      <div style={{fontWeight:600,color:C.gray}}>{kp.home}–{kp.away}</div>
-                    ):(
-                      <div title="Zichtbaar zodra de wedstrijd is begonnen" style={{fontWeight:600,color:C.gray,filter:"blur(5px)",userSelect:"none",pointerEvents:"none"}}>{kp.home}–{kp.away}</div>
-                    )}
-                  </div>
-                  <div style={{minWidth:52,textAlign:"right",fontSize:11,color:C.gray}}>
-                    {begonnen?"nog open":"🔒 na aanvang"}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"center",gap:8,paddingLeft:46}}>
+                    <div style={{fontSize:12}}>
+                      <div style={{color:C.gray,fontSize:10}}>Voorspelling</div>
+                      {begonnen?(
+                        <div style={{fontWeight:600,color:C.gray}}>{kp.home}–{kp.away}</div>
+                      ):(
+                        <div title="Zichtbaar zodra de wedstrijd is begonnen" style={{fontWeight:600,color:C.gray,filter:"blur(5px)",userSelect:"none",pointerEvents:"none",display:"inline-block"}}>{kp.home}–{kp.away}</div>
+                      )}
+                    </div>
+                    <div style={{minWidth:56,textAlign:"right",fontSize:11,color:C.gray,whiteSpace:"nowrap"}}>
+                      {begonnen?"nog open":"🔒 na aanvang"}
+                    </div>
                   </div>
                 </div>
                 );

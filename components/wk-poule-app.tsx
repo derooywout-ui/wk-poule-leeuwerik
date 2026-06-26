@@ -3560,7 +3560,9 @@ function DeelnemerOverlay({p, ctx, onClose}){
                   <div style={{minWidth:52,textAlign:"right",fontSize:11,color:C.gray}}>nog open</div>
                 </div>
               ))}
-              {notPlayedKO.map(({m,kp})=>(
+              {notPlayedKO.map(({m,kp})=>{
+                const begonnen = m.kickoff ? new Date() >= new Date(m.kickoff) : false;
+                return(
                 <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:7,marginBottom:5,background:"#f7f7f7",border:"1px solid #e0e0e0",opacity:0.75}}>
                   <span style={{fontSize:10,color:C.green,fontWeight:700,width:32,flexShrink:0}}>{KO_KORT[m.round_id]||"KO"}</span>
                   <div style={{flex:1,fontSize:13,color:C.gray}}>
@@ -3570,11 +3572,18 @@ function DeelnemerOverlay({p, ctx, onClose}){
                   </div>
                   <div style={{fontSize:12,textAlign:"center",minWidth:60}}>
                     <div style={{fontSize:11}}>Voorspelling</div>
-                    <div style={{fontWeight:600,color:C.gray}}>{kp.home}–{kp.away}</div>
+                    {begonnen?(
+                      <div style={{fontWeight:600,color:C.gray}}>{kp.home}–{kp.away}</div>
+                    ):(
+                      <div title="Zichtbaar zodra de wedstrijd is begonnen" style={{fontWeight:600,color:C.gray,filter:"blur(5px)",userSelect:"none",pointerEvents:"none"}}>{kp.home}–{kp.away}</div>
+                    )}
                   </div>
-                  <div style={{minWidth:52,textAlign:"right",fontSize:11,color:C.gray}}>nog open</div>
+                  <div style={{minWidth:52,textAlign:"right",fontSize:11,color:C.gray}}>
+                    {begonnen?"nog open":"🔒 na aanvang"}
+                  </div>
                 </div>
-              ))}
+                );
+              })}
             </>
           )}
 

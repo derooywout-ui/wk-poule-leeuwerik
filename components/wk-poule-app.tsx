@@ -3020,16 +3020,17 @@ function PredictView({ctx}){
 function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
   const chartId = `ranking_chart_${participantId}`.replace(/[^a-zA-Z0-9_]/g,"_");
 
-  // Per matches_played-waarde (= per gespeelde wedstrijd, consistent met de
-  // trend-pijl ↑/↓ in het klassement) nemen we de BESTE rang die op dat moment
-  // is bereikt — dit voorkomt dat tussentijdse handmatige correcties of extra
-  // Apps Script runs een vertekend beeld geven, en houdt de grafiek consistent
-  // met hoogste/laagste-ooit hierboven.
+  // Per matches_played-waarde (= per gespeelde wedstrijd) nemen we de LAATST
+  // vastgelegde rang (op created_at) — dat is de definitieve stand zoals die
+  // gold toen dat aantal wedstrijden was verwerkt, vóórdat de volgende wedstrijd
+  // erbij kwam. Dit voorkomt dat een vluchtige tussenstand (door een handmatige
+  // correctie of extra Apps Script run) als kunstmatige piek/dal in de grafiek
+  // verschijnt, en houdt de lijn vloeiend en waarheidsgetrouw.
   const perWedstrijd = rankingSnapshot
     .filter(r=>r.participant_id===participantId && (r.matches_played??0)>0)
     .reduce((acc,r)=>{
       const mp=r.matches_played;
-      if(!acc[mp] || r.rank<acc[mp].rank) acc[mp]=r;
+      if(!acc[mp] || new Date(r.created_at)>new Date(acc[mp].created_at)) acc[mp]=r;
       return acc;
     },{});
   const dataPunten = Object.values(perWedstrijd).sort((a,b)=>a.matches_played-b.matches_played);
@@ -3289,11 +3290,18 @@ function DeelnemerOverlay({p, ctx, onClose}){
     if(v){const q=ctx.bonusQuestions.find(bq=>String(bq.idx)===String(qi));ptsBonusTotal+=(q?.points??20);}
   });
 
-  // Hoogste en laagste stand — consistent met de grafiek: alle ruwe snapshots
-  // met matches_played >= 1, want de grafiek dedupliceert per dag en kan daardoor
-  // een tussentijdse piek/dal binnen één dag missen. Hier pakken we het echte
-  // min/max over ALLE momentopnamen, niet alleen de laatste van elke dag.
-  const allMySnaps=ctx.rankingSnapshot.filter(r=>r.participant_id===p.id&&(r.matches_played??0)>=1);
+  // Hoogste en laagste stand — consistent met de grafiek: we nemen per
+  // matches_played de LAATST vastgelegde rang (de definitieve stand op dat
+  // moment), niet elke vluchtige tussenstand. Zo komt een kortstondige piek/dal
+  // door een handmatige correctie niet als "hoogste/laagste ooit" naar voren,
+  // en matchen deze cijfers exact met de punten in de grafiek.
+  const allMySnapsRaw=ctx.rankingSnapshot.filter(r=>r.participant_id===p.id&&(r.matches_played??0)>=1);
+  const allMySnapsPerWedstrijd=Object.values(allMySnapsRaw.reduce((acc,r)=>{
+    const mp=r.matches_played;
+    if(!acc[mp] || new Date(r.created_at)>new Date(acc[mp].created_at)) acc[mp]=r;
+    return acc;
+  },{}));
+  const allMySnaps=allMySnapsPerWedstrijd;
   const hoogsteStand=allMySnaps.length>0?Math.min(...allMySnaps.map(r=>r.rank)):null;
   const laagsteStand=allMySnaps.length>0?Math.max(...allMySnaps.map(r=>r.rank)):null;
 

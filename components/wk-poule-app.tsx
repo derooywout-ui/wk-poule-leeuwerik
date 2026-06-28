@@ -656,6 +656,21 @@ function ChatHoekje({ctx}){
     await laadBerichten();
   }
 
+  // Pin/ontpin een bericht (alleen admin). Max één bericht gepind tegelijk:
+  // bij pinnen worden eerst alle bestaande pins gereset, daarna dit bericht gepind.
+  async function togglePin(m){
+    if(!ctx.isAdmin) return;
+    if(m.pinned){
+      // Ontpinnen
+      await db.update("chat_messages",`id=eq.${m.id}`,{pinned:false});
+    }else{
+      // Eerst alle bestaande pins weghalen, dan dit bericht pinnen
+      await db.update("chat_messages","pinned=eq.true",{pinned:false});
+      await db.update("chat_messages",`id=eq.${m.id}`,{pinned:true});
+    }
+    await laadBerichten();
+  }
+
   function magVerwijderen(m){
     return ctx.isAdmin || m.client_id===clientId;
   }
@@ -772,13 +787,25 @@ function ChatHoekje({ctx}){
         {messages.length===0&&(
           <div style={{textAlign:"center",color:C.gray,fontSize:13,marginTop:20}}>Nog geen berichten. Wees de eerste! 👋</div>
         )}
-        {messages.map(m=>{
+        {[...messages].sort((a,b)=>{
+          // Gepind bericht altijd bovenaan; daarbinnen blijft de bestaande
+          // (nieuwste-eerst) volgorde uit de query behouden.
+          if(a.pinned&&!b.pinned) return -1;
+          if(!a.pinned&&b.pinned) return 1;
+          return 0;
+        }).map(m=>{
           const vanMij=m.client_id===clientId;
+          const gepind=!!m.pinned;
           return(
             <div key={m.id} style={{
-              background:vanMij?"#e8f5ee":"#f4f4f4",borderRadius:10,padding:"8px 10px",
-              border:`1px solid ${vanMij?"#b2dfdb":"#e8e8e8"}`,
+              background:gepind?"#fdf6d8":vanMij?"#e8f5ee":"#f4f4f4",borderRadius:10,padding:"8px 10px",
+              border:`1px solid ${gepind?"#e6cf5a":vanMij?"#b2dfdb":"#e8e8e8"}`,
             }}>
+              {gepind&&(
+                <div style={{display:"flex",alignItems:"center",gap:4,fontSize:10,fontWeight:700,color:"#9a7d00",textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>
+                  📌 Gepind door beheerder
+                </div>
+              )}
               <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:2}}>
                 <span style={{fontWeight:700,fontSize:12,color:C.green}}>
                   {m.author_name}{m.participant_id?"":" ·"}
@@ -787,9 +814,16 @@ function ChatHoekje({ctx}){
                 <span style={{fontSize:10,color:C.gray,flexShrink:0}}>{tijdLabel(m.created_at)}</span>
               </div>
               <div style={{fontSize:13,color:C.dark,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{renderBericht(m.message)}</div>
-              {magVerwijderen(m)&&(
-                <div style={{textAlign:"right",marginTop:2}}>
-                  <button onClick={()=>verwijder(m.id)} style={{background:"none",border:"none",color:"#c62828",fontSize:11,cursor:"pointer",padding:0}}>verwijderen</button>
+              {(magVerwijderen(m)||ctx.isAdmin)&&(
+                <div style={{display:"flex",justifyContent:"flex-end",gap:12,marginTop:2}}>
+                  {ctx.isAdmin&&(
+                    <button onClick={()=>togglePin(m)} style={{background:"none",border:"none",color:gepind?"#9a7d00":C.gray,fontSize:11,cursor:"pointer",padding:0,fontWeight:gepind?700:400}}>
+                      {gepind?"📌 losmaken":"📌 pin"}
+                    </button>
+                  )}
+                  {magVerwijderen(m)&&(
+                    <button onClick={()=>verwijder(m.id)} style={{background:"none",border:"none",color:"#c62828",fontSize:11,cursor:"pointer",padding:0}}>verwijderen</button>
+                  )}
                 </div>
               )}
             </div>
@@ -1832,7 +1866,7 @@ function HomeView({setView,ctx}){
               <Countdown/>
             </div>
           ):(
-            <div style={{...S.alert("warn"),display:"inline-block"}}>Deadline verstreken — voorspellingen gesloten.</div>
+            <div style={{...S.alert("warn"),display:"inline-block"}}>Voorspellen finalewedstrijden mogelijk tot één minuut voor aanvang wedstrijd</div>
           )}
           <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
             {!ctx.currentUser&&!dp&&<button style={S.btn("yellow")} onClick={()=>setView("register")}>Meedoen / Inloggen</button>}

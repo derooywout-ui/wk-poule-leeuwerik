@@ -4071,7 +4071,18 @@ function StandingsView({ctx}){
         })()}
       </div>
       {rows.length===0&&<p style={{color:COLORS.gray,fontSize:13}}>Nog geen deelnemers.</p>}
-      {rows.length>0&&(
+      {rows.length>0&&(()=>{
+        // Hoogste score per onderdeel bepalen (alleen markeren als >0, anders kleurt
+        // een nog-niet-gespeeld onderdeel als KO/Bonus de hele kolom grijs).
+        const maxToto=Math.max(0,...rows.map(p=>p.gToto||0));
+        const maxExact=Math.max(0,...rows.map(p=>p.gExact||0));
+        const maxDoorstoot=Math.max(0,...rows.map(p=>p.gDoorstoot||0));
+        const maxKoToto=Math.max(0,...rows.map(p=>p.koToto||0));
+        const maxKoExact=Math.max(0,...rows.map(p=>p.koExact||0));
+        const maxBonus=Math.max(0,...rows.map(p=>p.bonus||0));
+        const hi="#e0e0e0"; // licht grijs voor hoogste score
+        const markeer=(val,max)=>(max>0&&val===max)?{background:hi,fontWeight:700}:{};
+        return (
         <div style={{overflowX:"auto"}}>
           <table style={S.table}>
             <thead><tr>
@@ -4094,16 +4105,24 @@ function StandingsView({ctx}){
                   <td style={{...S.td,fontWeight:600,cursor:"pointer",color:COLORS.green}} onClick={()=>setSelectedP(p)}>
                     {p.first_name} {p.last_name} <span style={{fontSize:12,opacity:0.6}}>›</span>
                   </td>
-                  <td style={S.tdc}>{p.gToto}</td><td style={S.tdc}>{p.gExact}</td><td style={S.tdc}>{p.gDoorstoot}</td>
-                  <td style={S.tdc}>{p.koToto}</td><td style={S.tdc}>{p.koExact}</td>
-                  <td style={S.tdc}>{p.bonus}</td>
+                  <td style={{...S.tdc,...markeer(p.gToto,maxToto)}}>{p.gToto}</td>
+                  <td style={{...S.tdc,...markeer(p.gExact,maxExact)}}>{p.gExact}</td>
+                  <td style={{...S.tdc,...markeer(p.gDoorstoot,maxDoorstoot)}}>{p.gDoorstoot}</td>
+                  <td style={{...S.tdc,...markeer(p.koToto,maxKoToto)}}>{p.koToto}</td>
+                  <td style={{...S.tdc,...markeer(p.koExact,maxKoExact)}}>{p.koExact}</td>
+                  <td style={{...S.tdc,...markeer(p.bonus,maxBonus)}}>{p.bonus}</td>
                   <td style={S.tdc}><span style={S.badge}>{p.total}</span></td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10,fontSize:12,color:COLORS.gray}}>
+            <span style={{display:"inline-block",width:16,height:16,background:hi,borderRadius:3,border:`1px solid #ccc`,flexShrink:0}}/>
+            <span>= hoogste score per onderdeel (kan door meerdere deelnemers gedeeld worden)</span>
+          </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

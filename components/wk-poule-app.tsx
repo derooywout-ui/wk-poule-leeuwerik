@@ -1381,10 +1381,10 @@ function NuLiveBlok({liveScore, ctx, setView}){
   const C = COLORS;
   const months={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
 
-  // Meest recente gespeelde wedstrijd
+  // Meest recente gespeelde wedstrijd (groep + KO)
   const laatstGespeeld = React.useMemo(()=>{
-    const now=new Date();
     let beste=null,besteDt=null;
+    // Groepswedstrijden
     Object.entries(MATCH_SCHEDULE).forEach(([mid,sch])=>{
       const result=ctx.matchResults[mid];
       if(!result||result.home===null||result.home===undefined) return;
@@ -1392,25 +1392,43 @@ function NuLiveBlok({liveScore, ctx, setView}){
       const dt=new Date(2026,months[mon],parseInt(day),parseInt(h),parseInt(m));
       if(!besteDt||dt>besteDt){besteDt=dt;beste={mid,sch,result,dt};}
     });
+    // KO-wedstrijden
+    (ctx.koMatches||[]).forEach(km=>{
+      if(km.home_goals===null||km.home_goals===undefined||!km.kickoff) return;
+      const dt=new Date(km.kickoff);
+      if(!besteDt||dt>besteDt){
+        besteDt=dt;
+        const ronde=KO_ROUNDS.find(r=>r.id===km.round_id);
+        beste={mid:km.id,sch:{date:dt.toLocaleDateString("nl-NL",{day:"numeric",month:"short"}),time:dt.toLocaleTimeString("nl-NL",{hour:"2-digit",minute:"2-digit",timeZone:"Europe/Amsterdam"}),city:km.city||"",isKO:true,koLabel:ronde?ronde.label:"Knock-out",home_team:km.home_team,away_team:km.away_team},result:{home:km.home_goals,away:km.away_goals},dt};
+      }
+    });
     return beste;
-  },[ctx.matchResults]);
+  },[ctx.matchResults,ctx.koMatches]);
 
-  // Eerstvolgende wedstrijd
+  // Eerstvolgende wedstrijd (groep + KO)
   const volgende=React.useMemo(()=>{
-    const now=new Date();
     let vroegste=null,vroegsteDt=null;
+    // Groepswedstrijden zonder uitslag
     Object.entries(MATCH_SCHEDULE).forEach(([mid,sch])=>{
       const result=ctx.matchResults[mid];
       if(result&&result.home!==null&&result.home!==undefined) return;
       const[day,mon]=sch.date.split(" ");const[h,m]=sch.time.split(":");
       const dt=new Date(2026,months[mon],parseInt(day),parseInt(h),parseInt(m));
-      // Pak de wedstrijd zonder uitslag met de vroegste starttijd — ook als die
-      // al begonnen is (dt<=now). Zo blijft een lopende wedstrijd zonder live-data
-      // zichtbaar als "nu bezig" i.p.v. dat het systeem doorschiet naar de wedstrijd erna.
       if(!vroegsteDt||dt<vroegsteDt){vroegsteDt=dt;vroegste={mid,sch,dt};}
     });
+    // KO-wedstrijden zonder uitslag
+    (ctx.koMatches||[]).forEach(km=>{
+      if(km.home_goals!==null&&km.home_goals!==undefined) return;
+      if(!km.kickoff) return;
+      const dt=new Date(km.kickoff);
+      if(!vroegsteDt||dt<vroegsteDt){
+        vroegsteDt=dt;
+        const ronde=KO_ROUNDS.find(r=>r.id===km.round_id);
+        vroegste={mid:km.id,sch:{date:dt.toLocaleDateString("nl-NL",{day:"numeric",month:"short"}),time:dt.toLocaleTimeString("nl-NL",{hour:"2-digit",minute:"2-digit",timeZone:"Europe/Amsterdam"}),city:km.city||"",isKO:true,koLabel:ronde?ronde.label:"Knock-out",home_team:km.home_team,away_team:km.away_team},dt};
+      }
+    });
     return vroegste;
-  },[ctx.matchResults]);
+  },[ctx.matchResults,ctx.koMatches]);
 
   const now=new Date();
   const isLive=!!liveScore;
@@ -1437,13 +1455,19 @@ function NuLiveBlok({liveScore, ctx, setView}){
     const sch = toonNuBezigWedstrijd ? volgende.sch : laatstGespeeld.sch;
     const result = toonNuBezigWedstrijd ? null : laatstGespeeld.result;
 
-    const parts=mid.split("-");const grp=parts[0];
-    const groupTeams=WK_GROUPS[grp]||[];
     let t1=null,t2=null;
-    for(let i=0;i<groupTeams.length;i++) for(let j=i+1;j<groupTeams.length;j++){
-      if(`${grp}-${groupTeams[i].name}-${groupTeams[j].name}`===mid){t1=groupTeams[i];t2=groupTeams[j];}
+    if(sch.isKO){
+      // KO-wedstrijd: teams komen direct uit de sch-data (mid is een UUID, geen groep-formaat)
+      t1=sch.home_team?{name:sch.home_team}:{name:"nog onbekend"};
+      t2=sch.away_team?{name:sch.away_team}:{name:"nog onbekend"};
+    }else{
+      const parts=mid.split("-");const grp=parts[0];
+      const groupTeams=WK_GROUPS[grp]||[];
+      for(let i=0;i<groupTeams.length;i++) for(let j=i+1;j<groupTeams.length;j++){
+        if(`${grp}-${groupTeams[i].name}-${groupTeams[j].name}`===mid){t1=groupTeams[i];t2=groupTeams[j];}
+      }
+      if(!t1||!t2) return null;
     }
-    if(!t1||!t2) return null;
     return(
       <div style={{borderRadius:12,overflow:"hidden",marginBottom:14,
         boxShadow:"0 2px 12px rgba(0,0,0,0.08)",border:`1px solid ${C.border}`}}>
@@ -1882,6 +1906,7 @@ function HomeView({setView,ctx}){
 {/* Eerstvolgende wedstrijden */}
       {(()=>{
         const now=new Date();
+        const months={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
         // Collect all group matches with date/time
         const allMatches=[];
         Object.entries(WK_GROUPS).forEach(([grp,teams])=>{
@@ -1889,15 +1914,28 @@ function HomeView({setView,ctx}){
             const mid=getMatchId(grp,t1.name,t2.name);
             const sch=MATCH_SCHEDULE[mid];
             if(!sch) return;
-            const months={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
             const [day,mon]=sch.date.split(" ");
             const [h,m]=sch.time.split(":");
             const dt=new Date(2026,months[mon],parseInt(day),parseInt(h),parseInt(m));
             const result=ctx.matchResults[mid];
             const hasResult=result&&result.home!==undefined&&result.home!==null;
             const isLive=!hasResult&&dt<=now&&now<=new Date(dt.getTime()+115*60000);
-            allMatches.push({mid,grp,t1,t2,sch,dt,hasResult,isLive});
+            allMatches.push({mid,grp,t1,t2,sch,dt,hasResult,isLive,isKO:false});
           }));
+        });
+        // KO-wedstrijden toevoegen (ook met nog-onbekende landen)
+        (ctx.koMatches||[]).forEach(km=>{
+          if(!km.kickoff) return;
+          const dt=new Date(km.kickoff);
+          const hasResult=km.home_goals!==null&&km.home_goals!==undefined;
+          const isLive=!hasResult&&dt<=now&&now<=new Date(dt.getTime()+130*60000);
+          const ronde=KO_ROUNDS.find(r=>r.id===km.round_id);
+          allMatches.push({
+            mid:km.id,grp:null,isKO:true,koLabel:ronde?ronde.label:"Knock-out",
+            t1:{name:km.home_team||"nog onbekend"},t2:{name:km.away_team||"nog onbekend"},
+            sch:{date:dt.toLocaleDateString("nl-NL",{day:"numeric",month:"short"}),time:dt.toLocaleTimeString("nl-NL",{hour:"2-digit",minute:"2-digit",timeZone:"Europe/Amsterdam"}),city:km.city||""},
+            dt,hasResult,isLive,
+          });
         });
         // Show live + upcoming, sorted by time, max 3
         const upcoming=allMatches
@@ -1911,12 +1949,12 @@ function HomeView({setView,ctx}){
               <h2 style={{...S.h2,margin:0}}>Eerstvolgende wedstrijden</h2>
               <button style={{...S.btn("green"),fontSize:12,padding:"6px 12px"}} onClick={()=>setView("dagprogramma")}>Volledig programma →</button>
             </div>
-            {upcoming.map(({mid,grp,t1,t2,sch,isLive})=>(
+            {upcoming.map(({mid,grp,t1,t2,sch,isLive,isKO,koLabel})=>(
               <div key={mid} style={{padding:"10px 0",borderBottom:`1px solid ${COLORS.border}`}}>
                 <div style={{fontSize:11,color:COLORS.gray,marginBottom:6,display:"flex",gap:10,alignItems:"center"}}>
                   {isLive&&<span style={{background:"#e53935",color:"#fff",fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,letterSpacing:0.5}}>● NU BEZIG</span>}
                   <span>📅 {sch.date}</span><span>🕐 {sch.time} CET</span><span>📍 {sch.city}</span>
-                  <span style={S.tag("")}>Groep {grp}</span>
+                  <span style={S.tag(isKO?"green":"")}>{isKO?koLabel:`Groep ${grp}`}</span>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center"}}>
                   <div style={{display:"flex",alignItems:"center",gap:6,flex:1,justifyContent:"flex-end"}}>

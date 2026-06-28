@@ -1517,8 +1517,10 @@ function NuLiveBlok({liveScore, ctx, setView}){
           )}
           {/* Voorspellingsverdeling */}
           {(()=>{
+            // KO-wedstrijden hebben hun voorspellingen in koPredictions, groepswedstrijden in predictions
+            const predBron = sch.isKO ? ctx.koPredictions : ctx.predictions;
             const predRows=ctx.participants.map(p=>{
-              const pred=ctx.predictions[p.id]?.[mid];
+              const pred=predBron[p.id]?.[mid];
               const hasPred=pred&&pred.home!==undefined&&pred.home!==null;
               return{...p,pred,hasPred};
             }).filter(p=>p.hasPred);

@@ -3839,6 +3839,21 @@ const SPEELRONDE_MAP = {
   "L-Engeland-Panama":3, "L-Kroatië-Ghana":3,
 };
 
+// ─── KO ROUND MAP ────────────────────────────────────────────────────────────
+// Vertaalt de database-round_id (ko_matches.round_id) naar de filter-id die het
+// klassement gebruikt in ALLE_RONDES/actieveRondes. Let op: de halve finale en
+// finale heten in de database r2/r1, maar als filter r2ko/r1ko — omdat r1/r2 daar
+// al "Ronde 1/2" van de groepsfase zijn. Zonder deze map crasht het klassement
+// zodra de eerste KO-uitslag binnenkomt (KO_ROUND_MAP was niet gedefinieerd).
+const KO_ROUND_MAP = {
+  r16: "r16",   // zestiende finales
+  r8:  "r8",    // achtste finales
+  r4:  "r4",    // kwartfinales
+  r2:  "r2ko",  // halve finales (db: r2 → filter: r2ko)
+  r1:  "r1ko",  // finale (db: r1 → filter: r1ko)
+  r3:  "r1ko",  // troostfinale valt onder de finale-filter
+};
+
 function StandingsView({ctx}){
   const [selectedP,setSelectedP]=React.useState(null);
 

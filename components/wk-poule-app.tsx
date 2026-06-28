@@ -2143,6 +2143,26 @@ function HomeView({setView,ctx}){
         const top3toto=[...ratiosGekwalificeerd].sort((a,b)=>(b.totoOk/b.total)-(a.totoOk/a.total)||b.totoOk-a.totoOk).slice(0,3);
         const top3exact=[...ratiosGekwalificeerd].sort((a,b)=>(b.exactOk/b.total)-(a.exactOk/a.total)||b.exactOk-a.exactOk).slice(0,3);
 
+        // KO-ratio's: zelfde idee, maar over de gespeelde KO-wedstrijden.
+        // Geen vaste drempel (KO-wedstrijden groeien gaandeweg) — meedoen vanaf
+        // 1 gespeelde KO-wedstrijd waarvoor de deelnemer een voorspelling had.
+        const gespeeldeKO=(ctx.koMatches||[]).filter(m=>m.home_goals!==null&&m.home_goals!==undefined&&m.home_team&&m.away_team);
+        const koRatios=ctx.participants.map(p=>{
+          const kpred=ctx.koPredictions[p.id]||{};
+          let totoOk=0,exactOk=0,total=0;
+          gespeeldeKO.forEach(m=>{
+            const pp=kpred[m.id];
+            if(!pp||pp.home===undefined||pp.home===null||pp.away===undefined||pp.away===null) return;
+            total++;
+            const ex=parseInt(pp.home)===parseInt(m.home_goals)&&parseInt(pp.away)===parseInt(m.away_goals);
+            const to=calcToto(pp.home,pp.away)===calcToto(m.home_goals,m.away_goals);
+            if(ex){totoOk++;exactOk++;}else if(to){totoOk++;}
+          });
+          return{name:`${p.first_name} ${p.last_name}`,participant:p,totoOk,exactOk,total};
+        }).filter(r=>r.total>0);
+        const top3koToto=[...koRatios].sort((a,b)=>(b.totoOk/b.total)-(a.totoOk/a.total)||b.totoOk-a.totoOk).slice(0,3);
+        const top3koExact=[...koRatios].sort((a,b)=>(b.exactOk/b.total)-(a.exactOk/a.total)||b.exactOk-a.exactOk).slice(0,3);
+
         const hasAny=top3stijgers.length>0||top3dalers.length>0||top3toto.length>0||top3exact.length>0;
         if(!hasAny) return null;
 
@@ -2254,6 +2274,40 @@ function HomeView({setView,ctx}){
                       </div>
                     )}
                   </div>
+                  {/* KO toto ratio — alleen tonen als er KO-wedstrijden gespeeld zijn */}
+                  {top3koToto.length>0&&(
+                    <div>
+                      <div style={{fontSize:11,fontWeight:700,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}><span style={{fontWeight:900,fontSize:12,background:C.green,color:"#fff",borderRadius:4,padding:"1px 5px",marginRight:4}}>KO</span> Beste KO toto ratio</div>
+                      {top3koToto.map((r,i)=>{
+                        const pct=Math.round(r.totoOk/r.total*100);
+                        return(
+                          <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:i<top3koToto.length-1?`1px solid ${C.border}`:"none"}}>
+                            <span style={{fontSize:12,color:C.gray,width:16,flexShrink:0}}>{i+1}</span>
+                            <span style={{flex:1,fontSize:13,fontWeight:600}}><InsightNaam p={r.participant} onSelect={setSelectedInsight}/></span>
+                            <span style={{fontSize:12,color:C.gray}}>{r.totoOk}/{r.total}</span>
+                            <span style={{fontSize:12,fontWeight:700,color:C.green,minWidth:40,textAlign:"right"}}>{pct}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {/* KO exact ratio — alleen tonen als er KO-wedstrijden gespeeld zijn */}
+                  {top3koExact.length>0&&(
+                    <div>
+                      <div style={{fontSize:11,fontWeight:700,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>🎯 Beste KO exact ratio</div>
+                      {top3koExact.map((r,i)=>{
+                        const pct=Math.round(r.exactOk/r.total*100);
+                        return(
+                          <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:i<top3koExact.length-1?`1px solid ${C.border}`:"none"}}>
+                            <span style={{fontSize:12,color:C.gray,width:16,flexShrink:0}}>{i+1}</span>
+                            <span style={{flex:1,fontSize:13,fontWeight:600}}><InsightNaam p={r.participant} onSelect={setSelectedInsight}/></span>
+                            <span style={{fontSize:12,color:C.gray}}>{r.exactOk}/{r.total}</span>
+                            <span style={{fontSize:12,fontWeight:700,color:"#1565c0",minWidth:40,textAlign:"right"}}>{pct}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

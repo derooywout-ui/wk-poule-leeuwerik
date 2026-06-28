@@ -4550,9 +4550,13 @@ function DagProgrammaView({ctx, setView}){
   // Build combined date map: group matches + KO matches
   const allDatesMap=useMemo(()=>{
     const m={...WK_DATES};
-    // Add KO matches
+    // Dedupliceer KO-wedstrijden op id (vangnet: mocht er ooit een duplicaat in
+    // de state sluipen, dan toont het programma de wedstrijd toch maar één keer).
+    const gezien=new Set();
     ctx.koMatches.forEach(match=>{
       if(!match.kickoff) return;
+      if(gezien.has(match.id)) return;
+      gezien.add(match.id);
       const dt=new Date(match.kickoff);
       // Format as "28 jun"
       const day=dt.getDate();
@@ -5184,7 +5188,13 @@ function AdminKO({ctx}){
       home_goals:null,away_goals:null,
     };
     const res=await db.insert("ko_matches",[row]);
-    if(res) ctx.setKoMatches(p=>[...p,...res]);
+    // Veilige merge op id: voorkomt dat een wedstrijd dubbel in de lijst komt
+    // als 'ie er al in zat (blinde [...p,...res] append kon tijdelijk duplicaten geven).
+    if(res) ctx.setKoMatches(p=>{
+      const bestaandeIds=new Set(p.map(m=>m.id));
+      const nieuwe=res.filter(m=>!bestaandeIds.has(m.id));
+      return [...p,...nieuwe];
+    });
     setNewMatch({round_id:"r16",home_team:"",away_team:"",kickoff:"",city:""});
     setSaving(false);setSaved(true);setTimeout(()=>setSaved(false),2000);
   }

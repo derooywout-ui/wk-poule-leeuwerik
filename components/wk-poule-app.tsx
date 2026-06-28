@@ -4145,24 +4145,42 @@ function StandingsView({ctx}){
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:16}}>
         <h2 style={{...S.h2,margin:0}}>Klassement</h2>
         {(()=>{
-          // Laatste snapshot datum
-          // Laatste verwerkte wedstrijd op basis van volgorde in MATCH_SCHEDULE
-          // Sorteer gespeelde wedstrijden op datum+tijd (niet op schema-positie)
+          // Laatste verwerkte wedstrijd + totaal aantal gespeelde wedstrijden.
+          // Combineert groepswedstrijden (matchResults) én KO-wedstrijden (koMatches),
+          // zodat het blokje meeloopt met de KO-fase i.p.v. te blijven hangen op de
+          // laatste groepswedstrijd.
           const months2={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
           function matchDateTime(mid){
             const s=MATCH_SCHEDULE[mid];if(!s)return new Date(0);
             const[day,mon]=s.date.split(" ");const[h,m]=s.time.split(":");
             return new Date(2026,months2[mon],parseInt(day),parseInt(h),parseInt(m));
           }
-          const playedKeys=Object.keys(ctx.matchResults).filter(mid=>ctx.matchResults[mid]&&ctx.matchResults[mid].home!==null);
-          playedKeys.sort((a,b)=>matchDateTime(a)-matchDateTime(b));
-          const lastMid=playedKeys[playedKeys.length-1];
-          const lastResult=lastMid?ctx.matchResults[lastMid]:null;
-          const lastLabel=lastMid?lastMid.replace(/^[A-Z]-/,"").replace(/-/g," – "):null;
-          const lastScore=lastResult?lastResult.home+"–"+lastResult.away:null;
-          const lastDate=lastMid&&MATCH_SCHEDULE[lastMid]?MATCH_SCHEDULE[lastMid].date:null;
-          const totalPlayed=playedKeys.length;
-          if(!lastMid) return null;
+          // Gespeelde groepswedstrijden → uniforme vorm
+          const gespeeld=[];
+          Object.keys(ctx.matchResults).filter(mid=>ctx.matchResults[mid]&&ctx.matchResults[mid].home!==null).forEach(mid=>{
+            const r=ctx.matchResults[mid];
+            gespeeld.push({
+              dt:matchDateTime(mid),
+              label:mid.replace(/^[A-Z]-/,"").replace(/-/g," – "),
+              score:r.home+"–"+r.away,
+              date:MATCH_SCHEDULE[mid]?MATCH_SCHEDULE[mid].date:null,
+            });
+          });
+          // Gespeelde KO-wedstrijden → uniforme vorm
+          (ctx.koMatches||[]).filter(m=>m.home_goals!==null&&m.home_goals!==undefined&&m.home_team&&m.away_team).forEach(m=>{
+            const dt=m.kickoff?new Date(m.kickoff):new Date(0);
+            gespeeld.push({
+              dt,
+              label:`${m.home_team} – ${m.away_team}`,
+              score:m.home_goals+"–"+m.away_goals,
+              date:m.kickoff?dt.toLocaleDateString("nl-NL",{day:"numeric",month:"short",timeZone:"Europe/Amsterdam"}):null,
+            });
+          });
+          gespeeld.sort((a,b)=>a.dt-b.dt);
+          const last=gespeeld[gespeeld.length-1];
+          const totalPlayed=gespeeld.length;
+          if(!last) return null;
+          const lastLabel=last.label, lastScore=last.score, lastDate=last.date;
           return(
             <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
               <div style={{display:"flex",alignItems:"center",gap:8,background:"#f4f9f6",border:`1px solid ${COLORS.green}22`,borderRadius:8,padding:"6px 14px"}}>

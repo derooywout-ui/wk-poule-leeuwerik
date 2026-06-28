@@ -1150,12 +1150,19 @@ function KOPredictTab({ctx, currentUser, saving, setSaving, saved, setSaved}){
   async function saveKoMatch(match){
     setSaving(true);
     const p = localKoPred[match.id]||{};
-    if(p.home===undefined||p.home===null||p.away===undefined||p.away===null){setSaving(false);return;}
+    // De ScoreStepper toont 0 als standaard. Behandel een nog-niet-aangeraakte
+    // waarde dus ook als 0, zodat een 0-0 (of bijv. 2-0 waarbij één kant niet is
+    // aangeraakt) gewoon opslaat. Voorheen weigerde de save bij een undefined
+    // waarde, waardoor "0-0" zonder stepper-interactie niet werd opgeslagen.
+    const homeGoals = (p.home===undefined||p.home===null||p.home==="")? 0 : parseInt(p.home,10);
+    const awayGoals = (p.away===undefined||p.away===null||p.away==="")? 0 : parseInt(p.away,10);
     await fetch(`${SUPABASE_URL}/rest/v1/ko_predictions`,{
       method:"POST",
       headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
-      body:JSON.stringify([{participant_id:currentUser.id,match_id:match.id,home_goals:parseInt(p.home),away_goals:parseInt(p.away)}]),
+      body:JSON.stringify([{participant_id:currentUser.id,match_id:match.id,home_goals:homeGoals,away_goals:awayGoals}]),
     });
+    // Lokale voorspelling meteen bijwerken zodat de UI klopt, ook als de stepper niet is aangeraakt
+    setLocalKoPred(prev=>({...prev,[match.id]:{home:homeGoals,away:awayGoals}}));
     const kop=await db.get("ko_predictions","select=*&limit=2000");
     if(kop){
       const k={};

@@ -4082,35 +4082,36 @@ function StandingsView({ctx}){
         const maxBonus=Math.max(0,...rows.map(p=>p.bonus||0));
         const hi="#e0e0e0"; // licht grijs voor hoogste score
         const markeer=(val,max)=>(max>0&&val===max)?{background:hi,fontWeight:700}:{};
+        const vlijn={borderRight:`1px solid ${COLORS.border}`}; // verticale scheidingslijn, zelfde stijl als horizontale
         return (
         <div style={{overflowX:"auto"}}>
           <table style={S.table}>
             <thead><tr>
-              <th style={S.th}>#</th>
-              <th style={{...S.th,textAlign:"center"}}>+/-</th>
-              <th style={S.th}>Naam</th>
-              <th style={{...S.th,textAlign:"center"}}>Groep toto</th>
-              <th style={{...S.th,textAlign:"center"}}>Groep exact</th>
-              <th style={{...S.th,textAlign:"center"}}>Doorstoot</th>
-              <th style={{...S.th,textAlign:"center"}}>KO toto</th>
-              <th style={{...S.th,textAlign:"center"}}>KO exact</th>
-              <th style={{...S.th,textAlign:"center"}}>Bonus</th>
+              <th style={{...S.th,...vlijn}}>#</th>
+              <th style={{...S.th,textAlign:"center",...vlijn}}>+/-</th>
+              <th style={{...S.th,...vlijn}}>Naam</th>
+              <th style={{...S.th,textAlign:"center",...vlijn}}>Groep toto</th>
+              <th style={{...S.th,textAlign:"center",...vlijn}}>Groep exact</th>
+              <th style={{...S.th,textAlign:"center",...vlijn}}>Doorstoot</th>
+              <th style={{...S.th,textAlign:"center",...vlijn}}>KO toto</th>
+              <th style={{...S.th,textAlign:"center",...vlijn}}>KO exact</th>
+              <th style={{...S.th,textAlign:"center",...vlijn}}>Bonus</th>
               <th style={{...S.th,textAlign:"center",background:COLORS.dark}}>Totaal</th>
             </tr></thead>
             <tbody>
               {rows.map((p,i)=>(
                 <tr key={p.id} style={{background:p.rang===1?"#fffde7":i%2===0?"#f9fffe":"#fff"}}>
-                  <td style={S.td}>{p.rang===1?"🥇":p.rang===2?"🥈":p.rang===3?"🥉":p.rang}</td>
-                  <td style={S.tdc}><TrendBadge uid={p.id}/></td>
-                  <td style={{...S.td,fontWeight:600,cursor:"pointer",color:COLORS.green}} onClick={()=>setSelectedP(p)}>
+                  <td style={{...S.td,...vlijn}}>{p.rang===1?"🥇":p.rang===2?"🥈":p.rang===3?"🥉":p.rang}</td>
+                  <td style={{...S.tdc,...vlijn}}><TrendBadge uid={p.id}/></td>
+                  <td style={{...S.td,fontWeight:600,cursor:"pointer",color:COLORS.green,...vlijn}} onClick={()=>setSelectedP(p)}>
                     {p.first_name} {p.last_name} <span style={{fontSize:12,opacity:0.6}}>›</span>
                   </td>
-                  <td style={{...S.tdc,...markeer(p.gToto,maxToto)}}>{p.gToto}</td>
-                  <td style={{...S.tdc,...markeer(p.gExact,maxExact)}}>{p.gExact}</td>
-                  <td style={{...S.tdc,...markeer(p.gDoorstoot,maxDoorstoot)}}>{p.gDoorstoot}</td>
-                  <td style={{...S.tdc,...markeer(p.koToto,maxKoToto)}}>{p.koToto}</td>
-                  <td style={{...S.tdc,...markeer(p.koExact,maxKoExact)}}>{p.koExact}</td>
-                  <td style={{...S.tdc,...markeer(p.bonus,maxBonus)}}>{p.bonus}</td>
+                  <td style={{...S.tdc,...markeer(p.gToto,maxToto),...vlijn}}>{p.gToto}</td>
+                  <td style={{...S.tdc,...markeer(p.gExact,maxExact),...vlijn}}>{p.gExact}</td>
+                  <td style={{...S.tdc,...markeer(p.gDoorstoot,maxDoorstoot),...vlijn}}>{p.gDoorstoot}</td>
+                  <td style={{...S.tdc,...markeer(p.koToto,maxKoToto),...vlijn}}>{p.koToto}</td>
+                  <td style={{...S.tdc,...markeer(p.koExact,maxKoExact),...vlijn}}>{p.koExact}</td>
+                  <td style={{...S.tdc,...markeer(p.bonus,maxBonus),...vlijn}}>{p.bonus}</td>
                   <td style={S.tdc}><span style={S.badge}>{p.total}</span></td>
                 </tr>
               ))}

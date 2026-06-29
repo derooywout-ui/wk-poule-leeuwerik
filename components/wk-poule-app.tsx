@@ -5350,21 +5350,39 @@ function AdminKO({ctx}){
     ctx.setKoMatches(p=>p.map(m=>m.id===matchId?{...m,[field]:val===null||val===""?null:val}:m));
   }
 
-  async function saveResults(){
-    setSaving(true);
-    for(const match of ctx.koMatches){
-      const update={};
-      if(match.home_team!==undefined) update.home_team=match.home_team||null;
-      if(match.away_team!==undefined) update.away_team=match.away_team||null;
-      if(match.home_goals!==null&&match.home_goals!==undefined) update.home_goals=parseInt(match.home_goals);
-      if(match.away_goals!==null&&match.away_goals!==undefined) update.away_goals=parseInt(match.away_goals);
-      if(Object.keys(update).length>0){
-        await db.update("ko_matches",`id=eq.${match.id}`,update);
-      }
+  // Per-wedstrijd status: welke match wordt opgeslagen / net opgeslagen
+  const [savingId,setSavingId]=useState(null);
+  const [savedId,setSavedId]=useState(null);
+
+  async function saveMatchResult(match){
+    setSavingId(match.id);
+    const update={};
+    if(match.home_team!==undefined) update.home_team=match.home_team||null;
+    if(match.away_team!==undefined) update.away_team=match.away_team||null;
+    // Uitslag: behandel een nog-niet-aangeraakte stepper als 0 (consistent met wat
+    // de stepper toont), net als bij de poulewedstrijden. Maar alleen opslaan als
+    // er minstens één score is ingevuld — anders blijft de uitslag leeg (null).
+    const heeftScore = (match.home_goals!==null&&match.home_goals!==undefined&&match.home_goals!=="")
+                     ||(match.away_goals!==null&&match.away_goals!==undefined&&match.away_goals!=="");
+    if(heeftScore){
+      update.home_goals=(match.home_goals===null||match.home_goals===undefined||match.home_goals==="")?0:parseInt(match.home_goals);
+      update.away_goals=(match.away_goals===null||match.away_goals===undefined||match.away_goals==="")?0:parseInt(match.away_goals);
+    }
+    if(Object.keys(update).length>0){
+      await db.update("ko_matches",`id=eq.${match.id}`,update);
     }
     const kom=await db.get("ko_matches","select=*&order=match_num");
     if(kom) ctx.setKoMatches(kom);
-    setSaving(false);setSaved(true);setTimeout(()=>setSaved(false),2000);
+    setSavingId(null);setSavedId(match.id);setTimeout(()=>setSavedId(s=>s===match.id?null:s),2000);
+  }
+
+  async function clearMatchResult(match){
+    if(!window.confirm("Uitslag van deze wedstrijd wissen?")) return;
+    setSavingId(match.id);
+    await db.update("ko_matches",`id=eq.${match.id}`,{home_goals:null,away_goals:null});
+    const kom=await db.get("ko_matches","select=*&order=match_num");
+    if(kom) ctx.setKoMatches(kom);
+    setSavingId(null);
   }
 
   async function deleteMatch(id){
@@ -5419,18 +5437,36 @@ function AdminKO({ctx}){
                   </div>
                   <button style={{...S.btn(),fontSize:11,padding:"4px 8px"}} onClick={()=>deleteMatch(match.id)}>✕</button>
                 </div>
+                {/* Wint-label + per-wedstrijd opslaan/wissen */}
+                {match.home_team&&match.away_team&&(()=>{
+                  const h=(match.home_goals===null||match.home_goals===undefined||match.home_goals==="")?null:parseInt(match.home_goals);
+                  const a=(match.away_goals===null||match.away_goals===undefined||match.away_goals==="")?null:parseInt(match.away_goals);
+                  const filled=h!==null&&a!==null;
+                  let wint=null;
+                  if(filled) wint=h>a?`${match.home_team} wint`:h<a?`${match.away_team} wint`:"Gelijkspel";
+                  const heeftUitslag=match.home_goals!==null&&match.home_goals!==undefined;
+                  return(
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:8,flexWrap:"wrap"}}>
+                      {wint&&<span style={{background:"#e8f5ee",color:COLORS.green,border:"1px solid #b2dfdb",borderRadius:5,padding:"3px 10px",fontSize:12,fontWeight:700}}>{wint}</span>}
+                      <button onClick={()=>saveMatchResult(match)} disabled={savingId===match.id} style={{
+                        padding:"5px 14px",borderRadius:6,border:"none",cursor:"pointer",
+                        background:COLORS.green,color:"#fff",fontSize:12,fontWeight:700,
+                      }}>{savingId===match.id?"Opslaan…":"💾 Opslaan"}</button>
+                      {savedId===match.id&&<span style={{fontSize:12,color:COLORS.green,fontWeight:700}}>✓ Opgeslagen</span>}
+                      {heeftUitslag&&savedId!==match.id&&(
+                        <button onClick={()=>clearMatchResult(match)} disabled={savingId===match.id} style={{
+                          background:"none",border:`1px solid ${COLORS.gray}`,cursor:"pointer",
+                          fontSize:11,color:COLORS.gray,padding:"4px 10px",borderRadius:5,
+                        }}>🗑 Uitslag wissen</button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           ))}
         </div>
       ))}
-
-      {ctx.koMatches.length>0&&(
-        <div style={S.row}>
-          <button style={S.btn("green")} onClick={saveResults} disabled={saving}>{saving?"Opslaan…":"💾 Uitslagen opslaan"}</button>
-          {saved&&<span style={S.tag("green")}>✓ Opgeslagen!</span>}
-        </div>
-      )}
     </div>
   );
 }

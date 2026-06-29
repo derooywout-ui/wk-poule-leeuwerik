@@ -745,7 +745,11 @@ function ChatHoekje({ctx}){
   return(
     <div style={{
       position:"fixed",bottom:20,left:20,zIndex:9998,
-      width:"min(360px, calc(100vw - 40px))",height:"min(520px, calc(100vh - 100px))",
+      width:"min(360px, calc(100vw - 40px))",
+      // dvh (dynamic viewport height) krimpt mee als het mobiele toetsenbord opkomt,
+      // zodat de invoerregel + verstuurknop zichtbaar blijven. vh als fallback.
+      height:"min(520px, calc(100vh - 100px))",
+      maxHeight:"calc(100dvh - 40px)",
       background:"#fff",borderRadius:14,boxShadow:"0 8px 30px rgba(0,0,0,0.3)",
       display:"flex",flexDirection:"column",overflow:"hidden",border:`1px solid ${C.border}`,
     }}>

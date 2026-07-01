@@ -5410,6 +5410,17 @@ function AdminKO({ctx}){
     ctx.setKoMatches(p=>p.filter(m=>m.id!==id));
   }
 
+  // Wis beide landen van een wedstrijd (zet home_team + away_team op NULL).
+  // Laat kickoff, stad en uitslag ongemoeid — de RIJ blijft dus bestaan, alleen de
+  // teams worden leeggemaakt. Handig om een foute invulling te resetten: bij de
+  // volgende API-sync worden de landen (indien bekend) opnieuw en correct ingevuld.
+  async function wisLanden(match){
+    if(!window.confirm(`Landen van deze wedstrijd wissen?\n(${match.home_team||"?"} – ${match.away_team||"?"})\n\nDe wedstrijd zelf blijft bestaan; alleen de landen worden leeggemaakt.`)) return;
+    await db.update("ko_matches",`id=eq.${match.id}`,{home_team:null,away_team:null});
+    const kom=await db.get("ko_matches","select=*&order=match_num");
+    if(kom) ctx.setKoMatches(kom);
+  }
+
   const matchesByRound=KO_ROUNDS.map(r=>({...r,
     matches:ctx.koMatches.filter(m=>m.round_id===r.id).sort((a,b)=>{
       if(a.kickoff&&b.kickoff) return new Date(a.kickoff)-new Date(b.kickoff);
@@ -5458,7 +5469,9 @@ function AdminKO({ctx}){
                       ? <div style={{display:"flex",alignItems:"center",gap:4,fontSize:12}}><FlagImg name={match.away_team} size={14}/> {match.away_team}</div>
                       : <div style={{fontSize:11,color:COLORS.gray,fontStyle:"italic"}}>{getKOAanduiding(match.round_id,match.match_num,false)}</div>}
                   </div>
-                  <button style={{...S.btn(),fontSize:11,padding:"4px 8px"}} onClick={()=>deleteMatch(match.id)}>✕</button>
+                  {(match.home_team||match.away_team)
+                    ? <button title="Wis alleen de landen (wedstrijd blijft bestaan)" style={{...S.btn(),fontSize:11,padding:"4px 8px",whiteSpace:"nowrap"}} onClick={()=>wisLanden(match)}>Wis landen</button>
+                    : <span style={{width:8}}/>}
                 </div>
                 {/* Wint-label + per-wedstrijd opslaan/wissen */}
                 {match.home_team&&match.away_team&&(()=>{

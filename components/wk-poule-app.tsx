@@ -5389,6 +5389,21 @@ function AdminKO({ctx}){
     setSavingId(null);
   }
 
+  // Auto-save van één team-veld (vangnet naast de API). Slaat ALLEEN het team op,
+  // niet de uitslag — die blijft ongemoeid. Lege waarde → null (verwijdert het land).
+  // Wordt aangeroepen bij onBlur (veld verlaten), zodat we niet bij elke toetsaanslag
+  // schrijven. Slaat alleen op als de waarde daadwerkelijk veranderd is t.o.v. de DB.
+  async function saveTeam(match, veld, waarde){
+    const nieuw = (waarde||"").trim();
+    const huidig = match[veld]||"";
+    if(nieuw===huidig) return; // niks veranderd → geen schrijfactie
+    const val = nieuw===""?null:nieuw;
+    await db.update("ko_matches",`id=eq.${match.id}`,{[veld]:val});
+    const kom=await db.get("ko_matches","select=*&order=match_num");
+    if(kom) ctx.setKoMatches(kom);
+    setSavedId(match.id);setTimeout(()=>setSavedId(s=>s===match.id?null:s),1500);
+  }
+
   async function deleteMatch(id){
     if(!window.confirm("Wedstrijd verwijderen?"))return;
     await db.delete("ko_matches",`id=eq.${id}`);
@@ -5424,7 +5439,9 @@ function AdminKO({ctx}){
                 <div style={{display:"grid",gridTemplateColumns:"1fr auto auto auto 1fr auto",alignItems:"center",gap:8}}>
                   <div style={{display:"flex",flexDirection:"column",gap:3}}>
                     <input style={{...S.input,fontSize:12,padding:"5px 8px"}} value={match.home_team||""}
-                      onChange={e=>setResult(match.id,"home_team",e.target.value)} placeholder={getKOAanduiding(match.round_id,match.match_num,true)}/>
+                      onChange={e=>setResult(match.id,"home_team",e.target.value)}
+                      onBlur={e=>saveTeam(match,"home_team",e.target.value)}
+                      placeholder={getKOAanduiding(match.round_id,match.match_num,true)}/>
                     {match.home_team
                       ? <div style={{display:"flex",alignItems:"center",gap:4,fontSize:12}}><FlagImg name={match.home_team} size={14}/> {match.home_team}</div>
                       : <div style={{fontSize:11,color:COLORS.gray,fontStyle:"italic"}}>{getKOAanduiding(match.round_id,match.match_num,true)}</div>}
@@ -5434,7 +5451,9 @@ function AdminKO({ctx}){
                   <ScoreStepper value={match.away_goals??""} onChange={v=>setResult(match.id,"away_goals",v)} disabled={false}/>
                   <div style={{display:"flex",flexDirection:"column",gap:3}}>
                     <input style={{...S.input,fontSize:12,padding:"5px 8px"}} value={match.away_team||""}
-                      onChange={e=>setResult(match.id,"away_team",e.target.value)} placeholder={getKOAanduiding(match.round_id,match.match_num,false)}/>
+                      onChange={e=>setResult(match.id,"away_team",e.target.value)}
+                      onBlur={e=>saveTeam(match,"away_team",e.target.value)}
+                      placeholder={getKOAanduiding(match.round_id,match.match_num,false)}/>
                     {match.away_team
                       ? <div style={{display:"flex",alignItems:"center",gap:4,fontSize:12}}><FlagImg name={match.away_team} size={14}/> {match.away_team}</div>
                       : <div style={{fontSize:11,color:COLORS.gray,fontStyle:"italic"}}>{getKOAanduiding(match.round_id,match.match_num,false)}</div>}

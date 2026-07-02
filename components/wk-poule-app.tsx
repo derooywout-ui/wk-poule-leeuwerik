@@ -1522,16 +1522,16 @@ function NuLiveBlok({liveScore, ctx, setView}){
           </span>
         </div>
         <div style={{background:"#fff",padding:"20px 16px"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:16,marginBottom:12}}>
-            <div style={{flex:1,textAlign:"right"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end"}}>
+          <div style={{display:"flex",alignItems:"flex-start",justifyContent:"center",gap:16,marginBottom:12}}>
+            <div style={{flex:1,minHeight:56,display:"flex",alignItems:"center"}}>
+              <div style={{width:"100%",display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end"}}>
                 <span style={{fontWeight:800,fontSize:16,color:C.dark}}>{t1.name}</span>
                 <FlagImg name={t1.name} size={28}/>
               </div>
             </div>
             {result?(
               <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                <div style={{background:"#f4f8f5",borderRadius:10,padding:"8px 20px",
+                <div style={{background:"#f4f8f5",borderRadius:10,padding:"8px 20px",minHeight:56,boxSizing:"border-box",
                   display:"flex",alignItems:"center",gap:12,minWidth:100,justifyContent:"center"}}>
                   {koDisp?(<>
                     <span style={{fontSize:32,fontWeight:900,color:C.dark}}>{koDisp.main.split("–")[0]}</span>
@@ -1546,9 +1546,9 @@ function NuLiveBlok({liveScore, ctx, setView}){
                 {koDisp?.mainSuffix&&<span style={{fontSize:11,color:C.gray,fontWeight:600}}>{koDisp.mainSuffix}</span>}
               </div>
             ):(
-              <div style={{padding:"8px 20px",borderRadius:10,fontWeight:700,fontSize:14,color:C.gray}}>vs</div>
+              <div style={{padding:"8px 20px",minHeight:56,boxSizing:"border-box",borderRadius:10,fontWeight:700,fontSize:14,color:C.gray,display:"flex",alignItems:"center"}}>vs</div>
             )}
-            <div style={{flex:1}}>
+            <div style={{flex:1,minHeight:56,display:"flex",alignItems:"center"}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <FlagImg name={t2.name} size={28}/>
                 <span style={{fontWeight:800,fontSize:16,color:C.dark}}>{t2.name}</span>
@@ -4848,13 +4848,13 @@ function DagProgrammaView({ctx, setView}){
                       <span>🕐 {time} CET</span><span>📍 {city}</span>
                       {round&&<span style={S.tag("yellow")}>{round.label}</span>}
                     </div>
-                    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                      <div style={{flex:1,display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
+                    <div style={{display:"flex",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+                      <div style={{flex:1,minHeight:32,display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
                         {t1?<><span style={{fontWeight:700,fontSize:15}}>{t1.name}</span><FlagImg name={t1.name} size={22}/></>:<span style={{color:COLORS.gray,fontSize:13,fontStyle:"italic"}}>PM</span>}
                       </div>
                       {hasResult?(
                         <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                          <div style={{minHeight:32,display:"flex",alignItems:"center",gap:6}}>
                             <span style={{fontSize:22,fontWeight:900,color:COLORS.green}}>{koDisp.main.split("–")[0]}</span>
                             <span style={{fontWeight:700,color:COLORS.gray}}>–</span>
                             <span style={{fontSize:22,fontWeight:900,color:COLORS.green}}>{koDisp.main.split("–")[1]}</span>
@@ -4862,9 +4862,9 @@ function DagProgrammaView({ctx, setView}){
                           {koDisp.mainSuffix&&<span style={{fontSize:10,color:COLORS.gray,fontWeight:600}}>{koDisp.mainSuffix}</span>}
                         </div>
                       ):(
-                        <div style={{padding:"6px 14px",background:COLORS.light,borderRadius:8,fontWeight:700,fontSize:14,color:COLORS.gray}}>vs</div>
+                        <div style={{minHeight:32,padding:"6px 14px",background:COLORS.light,borderRadius:8,fontWeight:700,fontSize:14,color:COLORS.gray,display:"flex",alignItems:"center"}}>vs</div>
                       )}
-                      <div style={{flex:1,display:"flex",alignItems:"center",gap:6}}>
+                      <div style={{flex:1,minHeight:32,display:"flex",alignItems:"center",gap:6}}>
                         {t2?<><FlagImg name={t2.name} size={22}/><span style={{fontWeight:700,fontSize:15}}>{t2.name}</span></>:<span style={{color:COLORS.gray,fontSize:13,fontStyle:"italic"}}>PM</span>}
                       </div>
                     </div>

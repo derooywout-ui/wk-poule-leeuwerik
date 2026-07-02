@@ -234,6 +234,40 @@ function deadlinePassed(){return localStorage.getItem('deadlineOverride')==='tru
 function fmtDeadline(){return DEADLINE.toLocaleString("nl-NL",{day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"});}
 function getMatchId(g,t1,t2){return`${g}-${t1}-${t2}`;}
 
+// Bepaalt hoe een KO-uitslag getoond moet worden, inclusief eventuele vermelding
+// van verlenging (n.v.) en strafschoppen. Voor de PUNTEN telt altijd de 90-minuten-
+// stand (home_goals/away_goals) — dat blijft ongewijzigd. Deze functie bepaalt
+// alleen de WEERGAVE ernaast.
+//   - geen verlenging → { main: "2–0", caption: null }
+//   - verlenging, geen strafschoppen → { main: "3–2", mainSuffix: "(n.v.)", caption: "2–2 na 90 minuten" }
+//   - strafschoppen → { main: "1–1", caption: "Paraguay wint n.v. (1–1) en strafschoppen (3–4)" }
+//     (caption krijgt een extra ", X–Y na 90 minuten" als de 120-min-stand afwijkt
+//     van de 90-minuten-stand, bijv. bij een 3-3 na verlenging dat op 90 min 1-1 was)
+function koScoreDisplay(match){
+  if(!match) return null;
+  const has90 = match.home_goals!==null && match.home_goals!==undefined;
+  if(!has90) return null; // nog niet gespeeld
+  const hasET = match.home_goals_et!==null && match.home_goals_et!==undefined;
+  if(!hasET){
+    return { main:`${match.home_goals}–${match.away_goals}`, mainSuffix:null, caption:null };
+  }
+  const hasPen = match.home_penalties!==null && match.home_penalties!==undefined;
+  if(!hasPen){
+    // Beslist in verlenging, geen strafschoppen nodig
+    return {
+      main:`${match.home_goals_et}–${match.away_goals_et}`,
+      mainSuffix:"(n.v.)",
+      caption:`${match.home_goals}–${match.away_goals} na 90 minuten`,
+    };
+  }
+  // Beslist na strafschoppen
+  const winnaar = match.home_penalties>match.away_penalties ? match.home_team : match.away_team;
+  const etWijktAf = match.home_goals_et!==match.home_goals || match.away_goals_et!==match.away_goals;
+  let caption = `${winnaar} wint n.v. (${match.home_goals_et}–${match.away_goals_et}) en strafschoppen (${match.home_penalties}–${match.away_penalties})`;
+  if(etWijktAf) caption += `, ${match.home_goals}–${match.away_goals} na 90 minuten`;
+  return { main:`${match.home_goals}–${match.away_goals}`, mainSuffix:null, caption };
+}
+
 const S={
   app:{fontFamily:'"Inter",sans-serif',minHeight:"100vh",background:COLORS.light,color:COLORS.dark},
   header:{background:COLORS.green,color:"#fff",padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"center",flexWrap:"wrap",gap:16},
@@ -1403,7 +1437,7 @@ function NuLiveBlok({liveScore, ctx, setView}){
       if(!besteDt||dt>besteDt){
         besteDt=dt;
         const ronde=KO_ROUNDS.find(r=>r.id===km.round_id);
-        beste={mid:km.id,sch:{date:dt.toLocaleDateString("nl-NL",{day:"numeric",month:"short"}),time:dt.toLocaleTimeString("nl-NL",{hour:"2-digit",minute:"2-digit",timeZone:"Europe/Amsterdam"}),city:km.city||"",isKO:true,koLabel:ronde?ronde.label:"Knock-out",home_team:km.home_team,away_team:km.away_team},result:{home:km.home_goals,away:km.away_goals},dt};
+        beste={mid:km.id,sch:{date:dt.toLocaleDateString("nl-NL",{day:"numeric",month:"short"}),time:dt.toLocaleTimeString("nl-NL",{hour:"2-digit",minute:"2-digit",timeZone:"Europe/Amsterdam"}),city:km.city||"",isKO:true,koLabel:ronde?ronde.label:"Knock-out",home_team:km.home_team,away_team:km.away_team},result:{home:km.home_goals,away:km.away_goals},koMatch:km,dt};
       }
     });
     return beste;
@@ -1458,6 +1492,8 @@ function NuLiveBlok({liveScore, ctx, setView}){
     const mid = toonNuBezigWedstrijd ? volgende.mid : laatstGespeeld.mid;
     const sch = toonNuBezigWedstrijd ? volgende.sch : laatstGespeeld.sch;
     const result = toonNuBezigWedstrijd ? null : laatstGespeeld.result;
+    // n.v./strafschoppen-weergave, alleen relevant voor KO-wedstrijden met verlenging
+    const koDisp = (!toonNuBezigWedstrijd && sch.isKO && laatstGespeeld.koMatch) ? koScoreDisplay(laatstGespeeld.koMatch) : null;
 
     let t1=null,t2=null;
     if(sch.isKO){
@@ -1494,11 +1530,20 @@ function NuLiveBlok({liveScore, ctx, setView}){
               </div>
             </div>
             {result?(
-              <div style={{background:"#f4f8f5",borderRadius:10,padding:"8px 20px",
-                display:"flex",alignItems:"center",gap:12,minWidth:100,justifyContent:"center"}}>
-                <span style={{fontSize:32,fontWeight:900,color:C.dark}}>{result.home}</span>
-                <span style={{fontSize:20,color:C.gray}}>–</span>
-                <span style={{fontSize:32,fontWeight:900,color:C.dark}}>{result.away}</span>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                <div style={{background:"#f4f8f5",borderRadius:10,padding:"8px 20px",
+                  display:"flex",alignItems:"center",gap:12,minWidth:100,justifyContent:"center"}}>
+                  {koDisp?(<>
+                    <span style={{fontSize:32,fontWeight:900,color:C.dark}}>{koDisp.main.split("–")[0]}</span>
+                    <span style={{fontSize:20,color:C.gray}}>–</span>
+                    <span style={{fontSize:32,fontWeight:900,color:C.dark}}>{koDisp.main.split("–")[1]}</span>
+                  </>):(<>
+                    <span style={{fontSize:32,fontWeight:900,color:C.dark}}>{result.home}</span>
+                    <span style={{fontSize:20,color:C.gray}}>–</span>
+                    <span style={{fontSize:32,fontWeight:900,color:C.dark}}>{result.away}</span>
+                  </>)}
+                </div>
+                {koDisp?.mainSuffix&&<span style={{fontSize:11,color:C.gray,fontWeight:600}}>{koDisp.mainSuffix}</span>}
               </div>
             ):(
               <div style={{padding:"8px 20px",borderRadius:10,fontWeight:700,fontSize:14,color:C.gray}}>vs</div>
@@ -1510,6 +1555,9 @@ function NuLiveBlok({liveScore, ctx, setView}){
               </div>
             </div>
           </div>
+          {koDisp?.caption&&(
+            <div style={{textAlign:"center",fontSize:12,color:C.gray,marginBottom:8}}>{koDisp.caption}</div>
+          )}
           {toonNuBezigWedstrijd?(
             <div style={{textAlign:"center",fontSize:12,color:"#e53935",fontWeight:700}}>
               Uitslag nog niet bekend — wordt zo snel mogelijk ingevoerd
@@ -3403,7 +3451,7 @@ function DeelnemerOverlay({p, ctx, onClose}){
         koLabel:KO_KORT[m.round_id]||"KO",
         t1:{name:m.home_team}, t2:{name:m.away_team},
         result:{home:m.home_goals,away:m.away_goals},
-        pp:kp, hasPred, pts,
+        pp:kp, hasPred, pts, koMatch:m,
         dt:m.kickoff?new Date(m.kickoff):new Date(2099,0,1),
       };
     });
@@ -3681,10 +3729,11 @@ function DeelnemerOverlay({p, ctx, onClose}){
           {/* Gespeelde wedstrijden */}
           <div style={{fontWeight:700,fontSize:13,color:C.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Gespeelde wedstrijden</div>
           {playedAll.length===0&&<p style={{fontSize:13,color:C.gray}}>Nog geen gespeelde wedstrijden.</p>}
-          {playedAll.map(({mid,grp,t1,t2,result,pp,hasPred,pts,isKO,koLabel})=>{
+          {playedAll.map(({mid,grp,t1,t2,result,pp,hasPred,pts,isKO,koLabel,koMatch})=>{
             // Puntendrempels verschillen: KO = 10 exact / 6 toto, poule = 5 exact / 3 toto
             const exactPt=isKO?KO_EXACT_PTS:5;
             const totoPt=isKO?KO_TOTO_PTS:3;
+            const koDisp=isKO?koScoreDisplay(koMatch):null;
             const ptsBg=pts===exactPt?"#e8f5ee":pts===totoPt?"#fff8e1":pts===0?"#fdecea":"#f5f5f5";
             const ptsColor=pts===exactPt?C.green:pts===totoPt?"#7c5800":pts===0?"#c62828":C.gray;
             const ptsLabel=pts===exactPt?`🎯 ${exactPt}pt`:pts===totoPt?`✅ ${totoPt}pt`:pts===0?"❌ 0pt":"—";
@@ -3704,7 +3753,10 @@ function DeelnemerOverlay({p, ctx, onClose}){
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",alignItems:"center",gap:8,paddingLeft:46}}>
                   <div style={{fontSize:12}}>
                     <div style={{color:C.gray,fontSize:10}}>Uitslag</div>
-                    <div style={{fontWeight:700}}>{result.home}–{result.away}</div>
+                    <div style={{fontWeight:700}}>
+                      {koDisp?koDisp.main:`${result.home}–${result.away}`}
+                      {koDisp?.mainSuffix&&<span style={{fontWeight:600,fontSize:10,color:C.gray,marginLeft:4}}>{koDisp.mainSuffix}</span>}
+                    </div>
                   </div>
                   <div style={{fontSize:12}}>
                     <div style={{color:C.gray,fontSize:10}}>Voorspelling</div>
@@ -3714,6 +3766,9 @@ function DeelnemerOverlay({p, ctx, onClose}){
                     <span style={{fontSize:13,fontWeight:700,color:ptsColor,whiteSpace:"nowrap"}}>{ptsLabel}</span>
                   </div>
                 </div>
+                {koDisp?.caption&&(
+                  <div style={{fontSize:11,color:C.gray,paddingLeft:46,marginTop:4}}>{koDisp.caption}</div>
+                )}
               </div>
             );
           })}
@@ -4772,6 +4827,7 @@ function DagProgrammaView({ctx, setView}){
             if(isKO){
               const round=KO_ROUNDS.find(r=>r.id===koMatch?.round_id);
               const hasResult=koMatch&&koMatch.home_goals!==null&&koMatch.home_goals!==undefined;
+              const koDisp=hasResult?koScoreDisplay(koMatch):null;
               const t1=koMatch?.home_team?{name:koMatch.home_team}:null;
               const t2=koMatch?.away_team?{name:koMatch.away_team}:null;
               const predRows=ctx.participants.map(p=>{
@@ -4797,10 +4853,13 @@ function DagProgrammaView({ctx, setView}){
                         {t1?<><span style={{fontWeight:700,fontSize:15}}>{t1.name}</span><FlagImg name={t1.name} size={22}/></>:<span style={{color:COLORS.gray,fontSize:13,fontStyle:"italic"}}>PM</span>}
                       </div>
                       {hasResult?(
-                        <div style={{display:"flex",alignItems:"center",gap:6}}>
-                          <span style={{fontSize:22,fontWeight:900,color:COLORS.green}}>{koMatch.home_goals}</span>
-                          <span style={{fontWeight:700,color:COLORS.gray}}>–</span>
-                          <span style={{fontSize:22,fontWeight:900,color:COLORS.green}}>{koMatch.away_goals}</span>
+                        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <span style={{fontSize:22,fontWeight:900,color:COLORS.green}}>{koDisp.main.split("–")[0]}</span>
+                            <span style={{fontWeight:700,color:COLORS.gray}}>–</span>
+                            <span style={{fontSize:22,fontWeight:900,color:COLORS.green}}>{koDisp.main.split("–")[1]}</span>
+                          </div>
+                          {koDisp.mainSuffix&&<span style={{fontSize:10,color:COLORS.gray,fontWeight:600}}>{koDisp.mainSuffix}</span>}
                         </div>
                       ):(
                         <div style={{padding:"6px 14px",background:COLORS.light,borderRadius:8,fontWeight:700,fontSize:14,color:COLORS.gray}}>vs</div>
@@ -4809,6 +4868,9 @@ function DagProgrammaView({ctx, setView}){
                         {t2?<><FlagImg name={t2.name} size={22}/><span style={{fontWeight:700,fontSize:15}}>{t2.name}</span></>:<span style={{color:COLORS.gray,fontSize:13,fontStyle:"italic"}}>PM</span>}
                       </div>
                     </div>
+                    {koDisp?.caption&&(
+                      <div style={{textAlign:"center",fontSize:11,color:COLORS.gray,marginTop:6}}>{koDisp.caption}</div>
+                    )}
                   </div>
                   {(()=>{
                     const kickoff=koMatch?.kickoff?new Date(koMatch.kickoff):null;
@@ -5372,6 +5434,21 @@ function AdminKO({ctx}){
       update.home_goals=(match.home_goals===null||match.home_goals===undefined||match.home_goals==="")?0:parseInt(match.home_goals);
       update.away_goals=(match.away_goals===null||match.away_goals===undefined||match.away_goals==="")?0:parseInt(match.away_goals);
     }
+    // Stand na verlenging (120 min) en strafschoppen — alleen opslaan als minstens
+    // één kant is aangeraakt, net als bij de 90-minuten-uitslag. Blijft anders null
+    // (= "geen verlenging"/"geen strafschoppen"), nooit een impliciete 0-0.
+    const heeftET = (match.home_goals_et!==null&&match.home_goals_et!==undefined&&match.home_goals_et!=="")
+                  ||(match.away_goals_et!==null&&match.away_goals_et!==undefined&&match.away_goals_et!=="");
+    if(heeftET){
+      update.home_goals_et=(match.home_goals_et===null||match.home_goals_et===undefined||match.home_goals_et==="")?0:parseInt(match.home_goals_et);
+      update.away_goals_et=(match.away_goals_et===null||match.away_goals_et===undefined||match.away_goals_et==="")?0:parseInt(match.away_goals_et);
+    }
+    const heeftPen = (match.home_penalties!==null&&match.home_penalties!==undefined&&match.home_penalties!=="")
+                   ||(match.away_penalties!==null&&match.away_penalties!==undefined&&match.away_penalties!=="");
+    if(heeftPen){
+      update.home_penalties=(match.home_penalties===null||match.home_penalties===undefined||match.home_penalties==="")?0:parseInt(match.home_penalties);
+      update.away_penalties=(match.away_penalties===null||match.away_penalties===undefined||match.away_penalties==="")?0:parseInt(match.away_penalties);
+    }
     if(Object.keys(update).length>0){
       await db.update("ko_matches",`id=eq.${match.id}`,update);
     }
@@ -5381,9 +5458,9 @@ function AdminKO({ctx}){
   }
 
   async function clearMatchResult(match){
-    if(!window.confirm("Uitslag van deze wedstrijd wissen?")) return;
+    if(!window.confirm("Uitslag van deze wedstrijd wissen? (inclusief eventuele verlenging/strafschoppen)")) return;
     setSavingId(match.id);
-    await db.update("ko_matches",`id=eq.${match.id}`,{home_goals:null,away_goals:null});
+    await db.update("ko_matches",`id=eq.${match.id}`,{home_goals:null,away_goals:null,home_goals_et:null,away_goals_et:null,home_penalties:null,away_penalties:null});
     const kom=await db.get("ko_matches","select=*&order=match_num");
     if(kom) ctx.setKoMatches(kom);
     setSavingId(null);
@@ -5473,6 +5550,39 @@ function AdminKO({ctx}){
                     ? <button title="Wis alleen de landen (wedstrijd blijft bestaan)" style={{...S.btn(),fontSize:11,padding:"4px 8px",whiteSpace:"nowrap"}} onClick={()=>wisLanden(match)}>Wis landen</button>
                     : <span style={{width:8}}/>}
                 </div>
+                {/* Verlenging & strafschoppen (optioneel, alleen relevant als er al een
+                    90-minuten-uitslag is). Vult de API automatisch; dit is het
+                    handmatige vangnet ernaast. */}
+                {match.home_team&&match.away_team&&match.home_goals!==null&&match.home_goals!==undefined&&(()=>{
+                  const preview=koScoreDisplay(match);
+                  return(
+                    <div style={{marginTop:8,padding:"8px 10px",background:"#fafafa",borderRadius:6,border:`1px dashed ${COLORS.border}`}}>
+                      <div style={{fontSize:10,color:COLORS.gray,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>Verlenging / strafschoppen (indien van toepassing)</div>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:16,flexWrap:"wrap"}}>
+                        <div style={{textAlign:"center"}}>
+                          <div style={{fontSize:9,color:COLORS.gray,marginBottom:2}}>Stand na verlenging (120 min)</div>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <ScoreStepper value={match.home_goals_et??""} onChange={v=>setResult(match.id,"home_goals_et",v)} disabled={false}/>
+                            <span style={{fontWeight:700,color:COLORS.gray}}>–</span>
+                            <ScoreStepper value={match.away_goals_et??""} onChange={v=>setResult(match.id,"away_goals_et",v)} disabled={false}/>
+                          </div>
+                        </div>
+                        <div style={{textAlign:"center"}}>
+                          <div style={{fontSize:9,color:COLORS.gray,marginBottom:2}}>Strafschoppen</div>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <ScoreStepper value={match.home_penalties??""} onChange={v=>setResult(match.id,"home_penalties",v)} disabled={false}/>
+                            <span style={{fontWeight:700,color:COLORS.gray}}>–</span>
+                            <ScoreStepper value={match.away_penalties??""} onChange={v=>setResult(match.id,"away_penalties",v)} disabled={false}/>
+                          </div>
+                        </div>
+                      </div>
+                      {preview?.caption&&(
+                        <div style={{textAlign:"center",fontSize:11,color:COLORS.green,fontWeight:600,marginTop:6}}>Weergave: {preview.caption}</div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Wint-label + per-wedstrijd opslaan/wissen */}
                 {match.home_team&&match.away_team&&(()=>{
                   const h=(match.home_goals===null||match.home_goals===undefined||match.home_goals==="")?null:parseInt(match.home_goals);

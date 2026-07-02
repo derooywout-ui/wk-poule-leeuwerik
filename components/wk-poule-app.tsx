@@ -1024,11 +1024,14 @@ export default function App(){
 
   useEffect(()=>{loadAll();},[loadAll]);
 
-  // Auto-refresh data every 5 minutes (silent background update)
+  // Auto-refresh data every 15 minutes (silent background update).
+  // Was 5 minuten; verlengd om de Supabase-egress te beperken — met de Range-
+  // header-fix haalt elke ververs-beurt nu de volledige (groeiende) rankings_
+  // snapshot-geschiedenis op i.p.v. de eerder stiekem afgekapte 10.000 rijen.
   useEffect(()=>{
     const interval=setInterval(()=>{
       loadAll();
-    }, 5 * 60 * 1000); // 5 minutes
+    }, 15 * 60 * 1000); // 15 minutes
     return()=>clearInterval(interval);
   },[loadAll]);
 
@@ -2534,20 +2537,45 @@ function HomeView({setView,ctx}){
 
               // ── Detector 4: Perfecte dag (alle wedstrijden van 1 dag goed) ──
               (()=>{
-                const months={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
                 const perDag={};
                 Object.entries(MATCH_SCHEDULE).forEach(([mid,sch])=>{
                   if(!perDag[sch.date]) perDag[sch.date]=[];
-                  perDag[sch.date].push(mid);
+                  perDag[sch.date].push({mid,isKO:false});
+                });
+                // KO-wedstrijden ook meenemen, gegroepeerd op hun kalenderdatum (uit
+                // kickoff). Voorheen keek deze detector alleen naar groepsfase-dagen
+                // (MATCH_SCHEDULE), waardoor er sinds het einde van de groepsfase
+                // geen nieuwe "perfecte dag" meer gevonden kon worden.
+                const koById={};
+                (ctx.koMatches||[]).forEach(m=>{
+                  koById[m.id]=m;
+                  if(!m.kickoff) return;
+                  const dt=new Date(m.kickoff);
+                  const datum=dt.toLocaleDateString("nl-NL",{day:"numeric",month:"short",timeZone:"Europe/Amsterdam"});
+                  if(!perDag[datum]) perDag[datum]=[];
+                  perDag[datum].push({mid:m.id,isKO:true});
                 });
                 let perfecteDagen=[];
-                Object.entries(perDag).forEach(([datum,mids])=>{
-                  const gespeeld=mids.filter(mid=>ctx.matchResults[mid]&&ctx.matchResults[mid].home!==null);
+                Object.entries(perDag).forEach(([datum,items])=>{
+                  const gespeeld=items.filter(({mid,isKO})=>{
+                    if(isKO){
+                      const km=koById[mid];
+                      return km&&km.home_goals!==null&&km.home_goals!==undefined;
+                    }
+                    return ctx.matchResults[mid]&&ctx.matchResults[mid].home!==null;
+                  });
                   if(gespeeld.length<1) return;
                   ctx.participants.forEach(p=>{
-                    const pred=ctx.predictions[p.id]||{};
-                    const alleGoed=gespeeld.every(mid=>{
-                      const pp=pred[mid];const r=ctx.matchResults[mid];
+                    const predGroep=ctx.predictions[p.id]||{};
+                    const predKO=ctx.koPredictions[p.id]||{};
+                    const alleGoed=gespeeld.every(({mid,isKO})=>{
+                      if(isKO){
+                        const km=koById[mid];
+                        const pp=predKO[mid];
+                        if(!pp||pp.home===undefined||pp.home===null) return false;
+                        return calcToto(pp.home,pp.away)===calcToto(km.home_goals,km.away_goals);
+                      }
+                      const pp=predGroep[mid];const r=ctx.matchResults[mid];
                       if(!pp||pp.home===undefined||pp.home===null) return false;
                       return calcToto(pp.home,pp.away)===calcToto(r.home,r.away);
                     });

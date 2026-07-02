@@ -5577,7 +5577,9 @@ function AdminKO({ctx}){
                         </div>
                       </div>
                       {preview?.caption&&(
-                        <div style={{textAlign:"center",fontSize:11,color:COLORS.green,fontWeight:600,marginTop:6}}>Weergave: {preview.caption}</div>
+                        <div style={{textAlign:"center",fontSize:11,color:COLORS.green,fontWeight:600,marginTop:6}}>
+                          Weergave: {preview.main}{preview.mainSuffix?` ${preview.mainSuffix}`:""}{preview.caption?` — ${preview.caption}`:""}
+                        </div>
                       )}
                     </div>
                   );
@@ -5588,8 +5590,19 @@ function AdminKO({ctx}){
                   const h=(match.home_goals===null||match.home_goals===undefined||match.home_goals==="")?null:parseInt(match.home_goals);
                   const a=(match.away_goals===null||match.away_goals===undefined||match.away_goals==="")?null:parseInt(match.away_goals);
                   const filled=h!==null&&a!==null;
+                  const hPen=(match.home_penalties===null||match.home_penalties===undefined||match.home_penalties==="")?null:parseInt(match.home_penalties);
+                  const aPen=(match.away_penalties===null||match.away_penalties===undefined||match.away_penalties==="")?null:parseInt(match.away_penalties);
+                  const hEt=(match.home_goals_et===null||match.home_goals_et===undefined||match.home_goals_et==="")?null:parseInt(match.home_goals_et);
+                  const aEt=(match.away_goals_et===null||match.away_goals_et===undefined||match.away_goals_et==="")?null:parseInt(match.away_goals_et);
                   let wint=null;
-                  if(filled) wint=h>a?`${match.home_team} wint`:h<a?`${match.away_team} wint`:"Gelijkspel";
+                  // De WERKELIJKE winnaar (wie doorging): strafschoppen wegen het
+                  // zwaarst, dan de stand na verlenging, en pas als laatste de
+                  // 90-minuten-score. Zo toont dit label bij België-Senegal
+                  // (2-2 na 90 min, 3-2 na verlenging) correct "België wint",
+                  // niet "Gelijkspel".
+                  if(hPen!==null&&aPen!==null) wint=hPen>aPen?`${match.home_team} wint`:hPen<aPen?`${match.away_team} wint`:null;
+                  else if(hEt!==null&&aEt!==null) wint=hEt>aEt?`${match.home_team} wint`:hEt<aEt?`${match.away_team} wint`:"Gelijkspel (n.v.) — strafschoppen invullen";
+                  else if(filled) wint=h>a?`${match.home_team} wint`:h<a?`${match.away_team} wint`:"Gelijkspel";
                   const heeftUitslag=match.home_goals!==null&&match.home_goals!==undefined;
                   return(
                     <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:8,flexWrap:"wrap"}}>

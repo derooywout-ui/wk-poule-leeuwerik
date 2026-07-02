@@ -2387,16 +2387,25 @@ function HomeView({setView,ctx}){
                   const[d,mo]=s.date.split(" ");const[h,m]=s.time.split(":");
                   return new Date(2026,months[mo],parseInt(d),parseInt(h),parseInt(m));
                 }
-                const gespeeldeMids=Object.keys(ctx.matchResults)
+                // Combineer groep- én KO-wedstrijden chronologisch, zodat een reeks
+                // die doorloopt in (of volledig binnen) de KO-fase ook meetelt. Eerder
+                // keek dit alleen naar groepswedstrijden (ctx.matchResults), waardoor
+                // een actuele KO-reeks onzichtbaar bleef voor deze twee detectors.
+                const gespeeldeGroep=Object.keys(ctx.matchResults)
                   .filter(mid=>ctx.matchResults[mid]&&ctx.matchResults[mid].home!==null)
-                  .sort((a,b)=>matchDt(a)-matchDt(b));
+                  .map(mid=>({mid,isKO:false,dt:matchDt(mid),result:ctx.matchResults[mid]}));
+                const gespeeldeKO=(ctx.koMatches||[])
+                  .filter(m=>m.home_goals!==null&&m.home_goals!==undefined&&m.kickoff)
+                  .map(m=>({mid:m.id,isKO:true,dt:new Date(m.kickoff),result:{home:m.home_goals,away:m.away_goals}}));
+                const gespeeldeMids=[...gespeeldeGroep,...gespeeldeKO].sort((a,b)=>a.dt-b.dt);
 
                 let besteStreak={naam:null,lengte:0,type:null,deelnemer:null};
                 ctx.participants.forEach(p=>{
-                  const pred=ctx.predictions[p.id]||{};
+                  const predGroep=ctx.predictions[p.id]||{};
+                  const predKO=ctx.koPredictions[p.id]||{};
                   let streak=0,maxStreak=0;
-                  gespeeldeMids.forEach(mid=>{
-                    const pp=pred[mid];const r=ctx.matchResults[mid];
+                  gespeeldeMids.forEach(({mid,isKO,result:r})=>{
+                    const pp=(isKO?predKO:predGroep)[mid];
                     if(!pp||pp.home===undefined||pp.home===null){streak=0;return;}
                     const toto=calcToto(pp.home,pp.away)===calcToto(r.home,r.away);
                     if(toto){streak++;maxStreak=Math.max(maxStreak,streak);}else{streak=0;}
@@ -2416,10 +2425,11 @@ function HomeView({setView,ctx}){
                 // ── Detector 1b: Langste EXACTE-uitslag-reeks (2+ op rij) ──
                 let besteExactStreak={naam:null,lengte:0,deelnemer:null};
                 ctx.participants.forEach(p=>{
-                  const pred=ctx.predictions[p.id]||{};
+                  const predGroep=ctx.predictions[p.id]||{};
+                  const predKO=ctx.koPredictions[p.id]||{};
                   let streak=0,maxStreak=0;
-                  gespeeldeMids.forEach(mid=>{
-                    const pp=pred[mid];const r=ctx.matchResults[mid];
+                  gespeeldeMids.forEach(({mid,isKO,result:r})=>{
+                    const pp=(isKO?predKO:predGroep)[mid];
                     if(!pp||pp.home===undefined||pp.home===null){streak=0;return;}
                     const exact=parseInt(pp.home)===parseInt(r.home)&&parseInt(pp.away)===parseInt(r.away);
                     if(exact){streak++;maxStreak=Math.max(maxStreak,streak);}else{streak=0;}
@@ -2437,10 +2447,12 @@ function HomeView({setView,ctx}){
                 }
 
                 // ── Detector 1c: Gemiddeld aantal doelpunten t.o.v. WK 2022 ──
+                // Telt nu ook KO-doelpunten mee (gespeeldeMids bevat sinds de
+                // streak-fix hierboven objecten {mid,isKO,dt,result} i.p.v. kale
+                // mid-strings, dus we lezen result direct i.p.v. via ctx.matchResults).
                 const WK2022_GEM_GOALS=2.69; // bron: FIFA officieel, 172 goals / 64 wedstrijden
-                const totaalGoals=gespeeldeMids.reduce((sum,mid)=>{
-                  const r=ctx.matchResults[mid];
-                  return sum+parseInt(r.home)+parseInt(r.away);
+                const totaalGoals=gespeeldeMids.reduce((sum,item)=>{
+                  return sum+parseInt(item.result.home)+parseInt(item.result.away);
                 },0);
                 if(gespeeldeMids.length>=10){
                   const gemHuidig=totaalGoals/gespeeldeMids.length;

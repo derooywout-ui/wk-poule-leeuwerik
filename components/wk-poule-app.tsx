@@ -15,6 +15,14 @@ async function sb(method, path, body) {
   const prefer = method === "POST" ? "return=representation,resolution=merge-duplicates"
                : method === "DELETE" ? "return=minimal"
                : "return=representation";
+  // Range-header afleiden uit de &limit= die de query zelf meegeeft, in plaats van
+  // een hardgecodeerd plafond. Zo kan deze header nooit meer stiekem een query
+  // afknijpen die zelf om meer vroeg (was eerder vast op "0-9999" = 10.000 rijen,
+  // ongeacht &limit= in de query of de Max Rows-instelling in Supabase — daardoor
+  // bleef rankings_snapshot bij elke fetch afgekapt op 10.000, ook toen Max Rows
+  // al naar 40.000/50.000 was verhoogd).
+  const limitMatch = path.match(/[?&]limit=(\d+)/);
+  const rangeMax = limitMatch ? parseInt(limitMatch[1]) - 1 : 9999;
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     method,
     headers: {
@@ -22,7 +30,7 @@ async function sb(method, path, body) {
       Authorization: `Bearer ${SUPABASE_KEY}`,
       "Content-Type": "application/json",
       Prefer: prefer,
-      "Range": "0-9999",
+      "Range": `0-${rangeMax}`,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -948,7 +956,10 @@ export default function App(){
       db.get("bonus_scores","select=*&limit=10000"),
       db.get("ko_matches","select=*&order=match_num"),
       db.get("ko_predictions","select=*&limit=2000"),
-      db.get("rankings_snapshot","select=participant_id,rank,matches_played,speeldatum,created_at&order=created_at.desc&limit=20000"),
+      // Limiet ruim boven de huidige rijenteller (14.049 op 2 juli) gezet, met
+      // marge voor de rest van het toernooi tot 19 juli. Blijft onder de Supabase
+      // Max Rows-instelling (50.000), dus geen nieuwe server-side afkap.
+      db.get("rankings_snapshot","select=participant_id,rank,matches_played,speeldatum,created_at&order=created_at.desc&limit=40000"),
       db.get("news_items","select=*&order=created_at.desc&limit=3"),
       db.get("rss_items","select=*&order=pub_date.desc&limit=5"),
       db.get("doorstoot_landen","select=team_name"),

@@ -276,6 +276,171 @@ function koScoreDisplay(match){
   return { main:`${match.home_goals}–${match.away_goals}`, mainSuffix:null, caption };
 }
 
+// ─── FEITEN VOOR "DE ANALYSE VAN LOUIS" ──────────────────────────────────────
+// Berekent per deelnemer een pakket HARDE feiten dat naar de AI gaat. De AI mag
+// niets bijverzinnen, dus alles wat in het verslag moet kunnen staan, wordt hier
+// berekend — met exact dezelfde logica als het klassement (zelfde punten, zelfde
+// streak-definities), zodat verslag en klassement elkaar nooit tegenspreken.
+function berekenAnalyseFeiten(deelnemer, ctx){
+  const uid=deelnemer.id;
+  const pred=ctx.predictions[uid]||{};
+  const koPred=ctx.koPredictions[uid]||{};
+
+  // ── Punten per onderdeel (identiek aan klassement-berekening) ──
+  let gToto=0,gExact=0,gDoorstoot=0,koToto=0,koExact=0,bonus=0;
+  let totoGoedGroep=0,exactGoedGroep=0,gespeeldGroep=0;
+  Object.entries(ctx.matchResults).forEach(([mid,result])=>{
+    if(result.home===null||result.home===undefined) return;
+    gespeeldGroep++;
+    const p=pred[mid];
+    if(!p||p.home===undefined||p.away===undefined||p.home===""||p.away==="") return;
+    const exactOk=parseInt(p.home)===parseInt(result.home)&&parseInt(p.away)===parseInt(result.away);
+    const totoOk=calcToto(p.home,p.away)===calcToto(result.home,result.away);
+    if(exactOk){gToto+=3;gExact+=2;totoGoedGroep++;exactGoedGroep++;}
+    else if(totoOk){gToto+=3;totoGoedGroep++;}
+  });
+  const predAdv=calcDoorstootFromPredictions(pred);
+  let doorstootGoed=0;
+  if(ctx.doorstootLanden&&ctx.doorstootLanden.length>0){
+    predAdv.forEach(t=>{
+      const enNaam=NL_TO_EN_ALIAS[t]||t.toLowerCase();
+      if(ctx.doorstootLanden.includes(enNaam)){gDoorstoot+=DOORSTOOT_PTS;doorstootGoed++;}
+    });
+  }
+  let totoGoedKO=0,exactGoedKO=0,gespeeldKO=0;
+  ctx.koMatches.forEach(match=>{
+    if(!match.home_team||!match.away_team||match.home_goals===null||match.home_goals===undefined) return;
+    gespeeldKO++;
+    const p=koPred[match.id];
+    if(!p||p.home===undefined||p.home===null) return;
+    const exactOk=parseInt(p.home)===parseInt(match.home_goals)&&parseInt(p.away)===parseInt(match.away_goals);
+    const totoOk=calcToto(p.home,p.away)===calcToto(match.home_goals,match.away_goals);
+    if(exactOk){koToto+=KO_TOTO_PTS;koExact+=(KO_EXACT_PTS-KO_TOTO_PTS);totoGoedKO++;exactGoedKO++;}
+    else if(totoOk){koToto+=KO_TOTO_PTS;totoGoedKO++;}
+  });
+  Object.entries(ctx.bonusScores[uid]||{}).forEach(([qi,v])=>{
+    if(v){const q=ctx.bonusQuestions.find(bq=>String(bq.idx)===String(qi));bonus+=(q?.points??20);}
+  });
+
+  // ── Streaks + exact-goed-in-doelrijke-wedstrijd (groep+KO chronologisch) ──
+  const months={jan:0,feb:1,mrt:2,apr:3,mei:4,jun:5,jul:6,aug:7,sep:8,okt:9,nov:10,dec:11};
+  const gespeeldAlles=[];
+  Object.entries(ctx.matchResults).forEach(([mid,r])=>{
+    if(r.home===null||r.home===undefined) return;
+    const s=MATCH_SCHEDULE[mid];
+    let dt=new Date(2099,0,1);
+    if(s){const[d,mo]=s.date.split(" ");const[h,m]=s.time.split(":");dt=new Date(2026,months[mo],parseInt(d),parseInt(h),parseInt(m));}
+    gespeeldAlles.push({pp:pred[mid],r,dt});
+  });
+  ctx.koMatches.forEach(m=>{
+    if(m.home_goals===null||m.home_goals===undefined||!m.kickoff) return;
+    gespeeldAlles.push({pp:koPred[m.id],r:{home:m.home_goals,away:m.away_goals},dt:new Date(m.kickoff)});
+  });
+  gespeeldAlles.sort((a,b)=>a.dt-b.dt);
+  let totoStreak=0,maxTotoStreak=0,exactStreak=0,maxExactStreak=0,exactBijDoelrijk=0;
+  gespeeldAlles.forEach(({pp,r})=>{
+    const heeft=pp&&pp.home!==undefined&&pp.home!==null&&pp.home!==""&&pp.away!==undefined&&pp.away!==null&&pp.away!=="";
+    const exactOk=heeft&&parseInt(pp.home)===parseInt(r.home)&&parseInt(pp.away)===parseInt(r.away);
+    const totoOk=heeft&&calcToto(pp.home,pp.away)===calcToto(r.home,r.away);
+    totoStreak=totoOk?totoStreak+1:0;maxTotoStreak=Math.max(maxTotoStreak,totoStreak);
+    exactStreak=exactOk?exactStreak+1:0;maxExactStreak=Math.max(maxExactStreak,exactStreak);
+    if(exactOk&&(parseInt(r.home)+parseInt(r.away))>4) exactBijDoelrijk++;
+  });
+
+  // ── Ranking-verloop uit snapshots ──
+  const eigen=ctx.rankingSnapshot.filter(r=>r.participant_id===uid&&(r.matches_played??0)>0);
+  let startRank=null,huidigRank=null,hoogste=null,laagste=null;
+  if(eigen.length>0){
+    const sorted=[...eigen].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+    startRank=sorted[0].rank;huidigRank=sorted[sorted.length-1].rank;
+    sorted.forEach(r=>{
+      if(hoogste===null||r.rank<hoogste) hoogste=r.rank;
+      if(laagste===null||r.rank>laagste) laagste=r.rank;
+    });
+  }
+
+  // ── Concurrent: meest gelijkend ranking-verloop (kleinste gemiddelde afstand) ──
+  const perBatch={};
+  ctx.rankingSnapshot.forEach(r=>{
+    if((r.matches_played??0)<=0) return;
+    if(!perBatch[r.created_at]) perBatch[r.created_at]={};
+    perBatch[r.created_at][r.participant_id]=r.rank;
+  });
+  let concurrent=null,kleinsteAfstand=Infinity;
+  ctx.participants.forEach(q=>{
+    if(q.id===uid) return;
+    let som=0,n=0;
+    Object.values(perBatch).forEach(batch=>{
+      if(batch[uid]!==undefined&&batch[q.id]!==undefined){som+=Math.abs(batch[uid]-batch[q.id]);n++;}
+    });
+    if(n>=5){const gem=som/n;if(gem<kleinsteAfstand){kleinsteAfstand=gem;concurrent=q;}}
+  });
+
+  // ── Poulegemiddelden (voor de vergelijking) ──
+  let somToto=0,somExact=0,somBonus=0,nDeel=0;
+  ctx.participants.forEach(q=>{
+    const qp=ctx.predictions[q.id]||{};const qk=ctx.koPredictions[q.id]||{};
+    let t=0,e=0,b=0;
+    Object.entries(ctx.matchResults).forEach(([mid,r])=>{
+      if(r.home===null||r.home===undefined)return;
+      const pp=qp[mid];if(!pp||pp.home===undefined||pp.home==="")return;
+      const ex=parseInt(pp.home)===parseInt(r.home)&&parseInt(pp.away)===parseInt(r.away);
+      const to=calcToto(pp.home,pp.away)===calcToto(r.home,r.away);
+      if(ex){t++;e++;}else if(to){t++;}
+    });
+    ctx.koMatches.forEach(m=>{
+      if(!m.home_team||m.home_goals===null||m.home_goals===undefined)return;
+      const pp=qk[m.id];if(!pp||pp.home===null||pp.home===undefined)return;
+      const ex=parseInt(pp.home)===parseInt(m.home_goals)&&parseInt(pp.away)===parseInt(m.away_goals);
+      const to=calcToto(pp.home,pp.away)===calcToto(m.home_goals,m.away_goals);
+      if(ex){t++;e++;}else if(to){t++;}
+    });
+    Object.entries(ctx.bonusScores[q.id]||{}).forEach(([qi,v])=>{
+      if(v){const qq=ctx.bonusQuestions.find(bq=>String(bq.idx)===String(qi));b+=(qq?.points??20);}
+    });
+    somToto+=t;somExact+=e;somBonus+=b;nDeel++;
+  });
+
+  // ── Wereldkampioen-bonusvraag (defensief: alleen als vraag vindbaar én finale gespeeld) ──
+  let kampioenFeit=null;
+  const kampVraag=ctx.bonusQuestions.find(q=>/kampioen/i.test(q.question||q.text||""));
+  const finale=ctx.koMatches.find(m=>m.round_id==="r1");
+  if(kampVraag&&finale&&finale.home_goals!==null&&finale.home_goals!==undefined&&finale.home_team&&finale.away_team){
+    let winnaar=null;
+    const hp=finale.home_penalties,ap=finale.away_penalties;
+    const he=finale.home_goals_et,ae=finale.away_goals_et;
+    if(hp!==null&&hp!==undefined&&ap!==null&&ap!==undefined) winnaar=hp>ap?finale.home_team:finale.away_team;
+    else if(he!==null&&he!==undefined&&ae!==null&&ae!==undefined) winnaar=he>ae?finale.home_team:he<ae?finale.away_team:null;
+    else winnaar=finale.home_goals>finale.away_goals?finale.home_team:finale.home_goals<finale.away_goals?finale.away_team:null;
+    const antwoord=(ctx.bonusAnswers[uid]||{})[kampVraag.idx];
+    if(winnaar&&antwoord){
+      kampioenFeit={
+        wereldkampioen:winnaar,
+        voorspelling_deelnemer:antwoord,
+        goed_voorspeld:String(antwoord).toLowerCase().trim()===String(winnaar).toLowerCase().trim(),
+      };
+    }
+  }
+
+  const totaal=gToto+gExact+gDoorstoot+koToto+koExact+bonus;
+  return {
+    naam:`${deelnemer.first_name} ${deelnemer.last_name}`,
+    totaal_deelnemers:ctx.participants.length,
+    eindpositie:huidigRank, start_positie:startRank,
+    hoogste_positie_ooit:hoogste, laagste_positie_ooit:laagste,
+    punten:{totaal, groepsfase:gToto+gExact, doorstoot:gDoorstoot, ko_fase:koToto+koExact, bonusvragen:bonus},
+    groepsfase:{wedstrijden:gespeeldGroep, toto_goed:totoGoedGroep, exact_goed:exactGoedGroep},
+    ko_fase:{wedstrijden:gespeeldKO, toto_goed:totoGoedKO, exact_goed:exactGoedKO},
+    doorstoot_landen_goed:doorstootGoed,
+    langste_toto_reeks:maxTotoStreak,
+    langste_exact_reeks:maxExactStreak,
+    exact_goed_bij_wedstrijd_met_5plus_doelpunten:exactBijDoelrijk,
+    poule_gemiddelde:{toto_goed:nDeel?Math.round(somToto/nDeel*10)/10:null, exact_goed:nDeel?Math.round(somExact/nDeel*10)/10:null, bonuspunten:nDeel?Math.round(somBonus/nDeel):null},
+    concurrent:concurrent?{naam:`${concurrent.first_name} ${concurrent.last_name}`, gemiddeld_posities_verschil:Math.round(kleinsteAfstand*10)/10}:null,
+    wereldkampioen:kampioenFeit,
+  };
+}
+
 const S={
   app:{fontFamily:'"Inter",sans-serif',minHeight:"100vh",background:COLORS.light,color:COLORS.dark},
   header:{background:COLORS.green,color:"#fff",padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"center",flexWrap:"wrap",gap:16},
@@ -3430,6 +3595,19 @@ function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
 
 function DeelnemerOverlay({p, ctx, onClose}){
   const C = COLORS;
+  // De analyse van Louis: on-demand ophalen (1 rij, alleen voor deze deelnemer).
+  // Button verschijnt alleen als er een verslag bestaat — vóór het genereren
+  // (admin-knop, na de finale) ziet dus niemand iets.
+  const [louisVerslag,setLouisVerslag]=useState(null);
+  const [toonLouis,setToonLouis]=useState(false);
+  useEffect(()=>{
+    let actief=true;
+    (async()=>{
+      const rows=await db.get("eindverslagen",`participant_id=eq.${p.id}&select=verslag`);
+      if(actief&&rows&&rows.length>0&&rows[0].verslag) setLouisVerslag(rows[0].verslag);
+    })();
+    return()=>{actief=false;};
+  },[p.id]);
   const pred = ctx.predictions[p.id]||{};
   const koPred = ctx.koPredictions[p.id]||{};
   const bonusA = ctx.bonusAnswers[p.id]||{};
@@ -3686,6 +3864,15 @@ function DeelnemerOverlay({p, ctx, onClose}){
         </div>
 
         <div style={{padding:"16px 20px"}}>
+
+          {/* De analyse van Louis — alleen zichtbaar als er een verslag is */}
+          {louisVerslag&&(
+            <button onClick={()=>setToonLouis(true)} style={{
+              width:"100%",marginBottom:16,padding:"12px 16px",borderRadius:10,
+              background:"linear-gradient(135deg,#0f6e56,#1a9c73)",color:"#fff",border:"none",
+              fontWeight:800,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+            }}>🎙 De analyse van Louis</button>
+          )}
 
           {/* Scores en ranking */}
           <div style={{marginBottom:20,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
@@ -3945,6 +4132,30 @@ function DeelnemerOverlay({p, ctx, onClose}){
           )}
         </div>
       </div>
+
+      {/* Pop-up: De analyse van Louis */}
+      {toonLouis&&louisVerslag&&(
+        <div onClick={()=>setToonLouis(false)} style={{
+          position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:1000,
+          display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 12px",overflowY:"auto",
+        }}>
+          <div onClick={e=>e.stopPropagation()} style={{
+            background:"#fff",borderRadius:14,width:"100%",maxWidth:560,
+            boxShadow:"0 8px 40px rgba(0,0,0,0.3)",
+          }}>
+            <div style={{background:"linear-gradient(135deg,#0f6e56,#1a9c73)",color:"#fff",padding:"18px 22px",borderRadius:"14px 14px 0 0",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:17}}>🎙 De analyse van Louis</div>
+                <div style={{fontSize:12,opacity:0.85,marginTop:2}}>{p.first_name} {p.last_name}</div>
+              </div>
+              <button onClick={()=>setToonLouis(false)} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:14,fontWeight:700}}>✕</button>
+            </div>
+            <div style={{padding:"22px",fontSize:14,lineHeight:1.7,color:C.dark,whiteSpace:"pre-line"}}>
+              {louisVerslag}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -5244,7 +5455,7 @@ function AdminView({ctx}){
       <button style={S.btn("green")} onClick={()=>pw===ADMIN_PASSWORD?ctx.setIsAdmin(true):setPwErr("Onjuist wachtwoord")}>Inloggen</button>
     </div>
   );
-  const tabs=[{id:"results",label:"📊 Uitslagen"},{id:"ko",label:"⚡ Knock-out"},{id:"doorstoot",label:"🏆 Doorstoot"},{id:"bonus",label:"🎁 Bonusvragen"},{id:"beoordeel",label:"✅ Beoordelen"},{id:"users",label:"Deelnemers"},{id:"news",label:"📢 Nieuws"},{id:"instellingen",label:"🛠️ Instellingen"}];
+  const tabs=[{id:"results",label:"📊 Uitslagen"},{id:"ko",label:"⚡ Knock-out"},{id:"doorstoot",label:"🏆 Doorstoot"},{id:"bonus",label:"🎁 Bonusvragen"},{id:"beoordeel",label:"✅ Beoordelen"},{id:"users",label:"Deelnemers"},{id:"news",label:"📢 Nieuws"},{id:"analyses",label:"🎙 Analyses"},{id:"instellingen",label:"🛠️ Instellingen"}];
   return(
     <div>
       <div style={{...S.row,marginBottom:14}}><h2 style={{...S.h2,margin:0}}>⚙️ Beheerderspaneel</h2><span style={S.tag("green")}>Admin ingelogd</span></div>
@@ -5256,7 +5467,82 @@ function AdminView({ctx}){
       {tab==="beoordeel"&&<AdminBeoordeel ctx={ctx}/>}
       {tab==="users"&&<AdminUsers ctx={ctx}/>}
       {tab==="news"&&<AdminNews ctx={ctx}/>}
+      {tab==="analyses"&&<AdminAnalyses ctx={ctx}/>}
       {tab==="instellingen"&&<AdminInstellingen ctx={ctx}/>}
+    </div>
+  );
+}
+
+// ─── ADMIN: DE ANALYSE VAN LOUIS ──────────────────────────────────────────────
+// Genereert per deelnemer een eindverslag: feiten worden hard berekend in de app
+// (berekenAnalyseFeiten), de tekst wordt geschreven via /api/analyse (Anthropic),
+// en het resultaat wordt opgeslagen in de tabel `eindverslagen`. De button op de
+// deelnemer-detailpagina verschijnt pas als er een verslag bestaat — dus vóór het
+// genereren ziet niemand iets. Sequentieel (1 tegelijk) om rate limits te ontzien.
+function AdminAnalyses({ctx}){
+  const [bezig,setBezig]=useState(false);
+  const [voortgang,setVoortgang]=useState(null); // {done,total,fouten:[]}
+  const [bestaand,setBestaand]=useState(null);   // aantal bestaande verslagen
+
+  async function telBestaand(){
+    const rows=await db.get("eindverslagen","select=participant_id");
+    setBestaand(rows?rows.length:0);
+  }
+  useEffect(()=>{telBestaand();},[]);
+
+  async function genereerAlles(){
+    if(!window.confirm(`Analyses genereren voor alle ${ctx.participants.length} deelnemers?\n\nDit kost API-tegoed en duurt enkele minuten. Bestaande verslagen worden overschreven.`)) return;
+    setBezig(true);
+    const fouten=[];
+    let done=0;
+    for(const p of ctx.participants){
+      try{
+        const feiten=berekenAnalyseFeiten(p,ctx);
+        const resp=await fetch("/api/analyse",{
+          method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({feiten}),
+        });
+        const data=await resp.json();
+        if(!resp.ok||!data.verslag) throw new Error(data.error||"leeg antwoord");
+        // Upsert: verwijder eventueel bestaand verslag en schrijf het nieuwe
+        await db.delete("eindverslagen",`participant_id=eq.${p.id}`);
+        await db.insert("eindverslagen",{participant_id:p.id,verslag:data.verslag});
+      }catch(e){
+        fouten.push(`${p.first_name} ${p.last_name}: ${e.message||e}`);
+      }
+      done++;
+      setVoortgang({done,total:ctx.participants.length,fouten:[...fouten]});
+    }
+    setBezig(false);
+    telBestaand();
+  }
+
+  return(
+    <div style={S.card}>
+      <h3 style={{...S.h2,fontSize:17}}>🎙 De analyse van Louis</h3>
+      <p style={{fontSize:13,color:COLORS.gray,lineHeight:1.5}}>
+        Genereert per deelnemer een persoonlijk eindverslag (feiten uit de app, tekst via Louis).
+        De knop "De analyse van Louis" verschijnt op ieders detailpagina zodra het verslag bestaat.
+        Bedoeld om <strong>na de finale</strong> één keer te draaien.
+      </p>
+      <div style={{fontSize:13,marginBottom:10}}>
+        Bestaande verslagen: <strong>{bestaand===null?"…":bestaand}</strong> van {ctx.participants.length}
+      </div>
+      <button style={S.btn("green")} disabled={bezig} onClick={genereerAlles}>
+        {bezig?"Bezig met genereren…":"🎙 Genereer alle analyses"}
+      </button>
+      {voortgang&&(
+        <div style={{marginTop:12,fontSize:13}}>
+          <div>Voortgang: {voortgang.done}/{voortgang.total}</div>
+          {voortgang.fouten.length>0&&(
+            <div style={{marginTop:6,color:"#c62828"}}>
+              Mislukt ({voortgang.fouten.length}):
+              {voortgang.fouten.map((f,i)=><div key={i} style={{fontSize:12}}>• {f}</div>)}
+            </div>
+          )}
+          {!bezig&&voortgang.fouten.length===0&&<div style={{color:COLORS.green,fontWeight:700,marginTop:6}}>✓ Alle verslagen gegenereerd</div>}
+        </div>
+      )}
     </div>
   );
 }

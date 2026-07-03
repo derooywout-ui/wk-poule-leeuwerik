@@ -413,12 +413,24 @@ function berekenAnalyseFeiten(deelnemer, ctx){
     else if(he!==null&&he!==undefined&&ae!==null&&ae!==undefined) winnaar=he>ae?finale.home_team:he<ae?finale.away_team:null;
     else winnaar=finale.home_goals>finale.away_goals?finale.home_team:finale.home_goals<finale.away_goals?finale.away_team:null;
     const antwoord=(ctx.bonusAnswers[uid]||{})[kampVraag.idx];
-    if(winnaar&&antwoord){
-      kampioenFeit={
-        wereldkampioen:winnaar,
-        voorspelling_deelnemer:antwoord,
-        goed_voorspeld:String(antwoord).toLowerCase().trim()===String(winnaar).toLowerCase().trim(),
-      };
+    // De vraag is type "open" (vrije tekst), dus GEEN eigen tekst-vergelijking
+    // (typefoutjes/varianten zoals "Oranje" i.p.v. "Nederland" zouden dan onterecht
+    // als fout gelden). We gebruiken i.p.v. daarvan de HANDMATIGE beoordeling die
+    // de admin al via het Beoordelen-scherm geeft (bonus_scores) — betrouwbaarder
+    // dan een automatische match. Nog niet beoordeeld → goed_voorspeld:null, en de
+    // AI-prompt wordt geïnstrueerd dat element dan gewoon weg te laten.
+    if(winnaar&&antwoord!==undefined&&antwoord!==null&&antwoord!==""){
+      const beoordeling=(ctx.bonusScores[uid]||{})[kampVraag.idx];
+      // Alleen meegeven als er al een handmatig oordeel is (true/false). Nog niet
+      // beoordeeld → element gewoon weglaten (i.p.v. een dubbelzinnige null-waarde
+      // aan de AI voor te leggen).
+      if(beoordeling===true||beoordeling===false){
+        kampioenFeit={
+          wereldkampioen:winnaar,
+          voorspelling_deelnemer:antwoord,
+          goed_voorspeld:beoordeling,
+        };
+      }
     }
   }
 

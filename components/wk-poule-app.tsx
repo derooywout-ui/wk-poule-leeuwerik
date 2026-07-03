@@ -5496,6 +5496,36 @@ function AdminAnalyses({ctx}){
   const [voortgang,setVoortgang]=useState(null); // {done,total,fouten:[]}
   const [bestaand,setBestaand]=useState(null);   // aantal bestaande verslagen
 
+  // Test op 1 deelnemer: zelfde route, zelfde opslag — maar voor 1 persoon, zodat
+  // je de toon kunt proeven vóórdat je alle 63 laat genereren (en betalen).
+  const gesorteerd=[...ctx.participants].sort((a,b)=>`${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`));
+  const [testId,setTestId]=useState(gesorteerd[0]?.id||"");
+  const [testBezig,setTestBezig]=useState(false);
+  const [testResultaat,setTestResultaat]=useState(null); // {naam,verslag} of null
+  const [testFout,setTestFout]=useState(null);
+
+  async function testEenDeelnemer(){
+    const p=ctx.participants.find(x=>x.id===testId);
+    if(!p) return;
+    setTestBezig(true);setTestFout(null);setTestResultaat(null);
+    try{
+      const feiten=berekenAnalyseFeiten(p,ctx);
+      const resp=await fetch("/api/analyse",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({feiten}),
+      });
+      const data=await resp.json();
+      if(!resp.ok||!data.verslag) throw new Error(data.error||"leeg antwoord");
+      await db.delete("eindverslagen",`participant_id=eq.${p.id}`);
+      await db.insert("eindverslagen",{participant_id:p.id,verslag:data.verslag});
+      setTestResultaat({naam:`${p.first_name} ${p.last_name}`,verslag:data.verslag});
+      telBestaand();
+    }catch(e){
+      setTestFout(e.message||String(e));
+    }
+    setTestBezig(false);
+  }
+
   async function telBestaand(){
     const rows=await db.get("eindverslagen","select=participant_id");
     setBestaand(rows?rows.length:0);
@@ -5540,6 +5570,27 @@ function AdminAnalyses({ctx}){
       <div style={{fontSize:13,marginBottom:10}}>
         Bestaande verslagen: <strong>{bestaand===null?"…":bestaand}</strong> van {ctx.participants.length}
       </div>
+
+      {/* Test op 1 deelnemer */}
+      <div style={{border:`1px solid ${COLORS.border}`,borderRadius:8,padding:"12px 14px",marginBottom:16,background:"#fafafa"}}>
+        <div style={{fontSize:12,fontWeight:800,color:COLORS.gray,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Eerst proeven? Test op 1 deelnemer</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          <select style={{...S.input,width:"auto",flex:"1 1 220px"}} value={testId} onChange={e=>setTestId(e.target.value)} disabled={testBezig}>
+            {gesorteerd.map(p=><option key={p.id} value={p.id}>{p.first_name} {p.last_name}</option>)}
+          </select>
+          <button style={S.btn("grey")} disabled={testBezig||!testId} onClick={testEenDeelnemer}>
+            {testBezig?"Bezig…":"Test genereren"}
+          </button>
+        </div>
+        {testFout&&<div style={{marginTop:8,color:"#c62828",fontSize:13}}>Mislukt: {testFout}</div>}
+        {testResultaat&&(
+          <div style={{marginTop:10,padding:"12px 14px",background:"#fff",border:`1px solid ${COLORS.border}`,borderRadius:8}}>
+            <div style={{fontSize:12,fontWeight:700,color:COLORS.green,marginBottom:6}}>🎙 {testResultaat.naam}</div>
+            <div style={{fontSize:13,lineHeight:1.6,whiteSpace:"pre-line"}}>{testResultaat.verslag}</div>
+          </div>
+        )}
+      </div>
+
       <button style={S.btn("green")} disabled={bezig} onClick={genereerAlles}>
         {bezig?"Bezig met genereren…":"🎙 Genereer alle analyses"}
       </button>

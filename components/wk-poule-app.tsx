@@ -290,33 +290,42 @@ function koScoreDisplay(match){
 //   - Pech: voorspelde toto matchte de stand-vóór, maar niet de eindstand
 //   - Geluk: voorspelde toto matchte de stand-vóór NIET, maar de eindstand wél
 //   - Overig (incl. geen voorspelling): telt niet mee
+// Punten: groepsfase-toto = 3 pt, KO-toto = 6 pt (KO_TOTO_PTS) per wedstrijd.
+// BELANGRIJK: dit is een MINIMUM — we leggen alleen de toto vlak vóór de
+// kanteling vast, geen exacte stand. Stond je vóór het late doelpunt ook nog
+// exact goed, dan ben je die extra exacte-punten óók kwijtgeraakt, maar dat
+// zit niet in dit cijfer (zie toelichting/tooltip bij het homepage-blok).
+const GROEP_TOTO_PTS = 3;
 function berekenGelukPech(ctx){
   const gekantelde=[];
   Object.entries(ctx.matchResults).forEach(([mid,r])=>{
     if(r.gekanteld && r.toto_voor_kanteling && r.home!==null && r.home!==undefined){
-      gekantelde.push({mid, isKO:false, totoVoor:r.toto_voor_kanteling, totoFinaal:calcToto(r.home,r.away)});
+      gekantelde.push({mid, isKO:false, totoVoor:r.toto_voor_kanteling, totoFinaal:calcToto(r.home,r.away), punten:GROEP_TOTO_PTS});
     }
   });
   (ctx.koMatches||[]).forEach(m=>{
     if(m.gekanteld && m.toto_voor_kanteling && m.home_goals!==null && m.home_goals!==undefined){
-      gekantelde.push({mid:m.id, isKO:true, totoVoor:m.toto_voor_kanteling, totoFinaal:calcToto(m.home_goals,m.away_goals)});
+      gekantelde.push({mid:m.id, isKO:true, totoVoor:m.toto_voor_kanteling, totoFinaal:calcToto(m.home_goals,m.away_goals), punten:KO_TOTO_PTS});
     }
   });
 
   const resultaten=ctx.participants.map(p=>{
-    let geluk=0, pech=0;
+    let geluk=0, pech=0, puntenGeluk=0, puntenPech=0;
     const predGroep=ctx.predictions[p.id]||{};
     const predKO=ctx.koPredictions[p.id]||{};
-    gekantelde.forEach(({mid,isKO,totoVoor,totoFinaal})=>{
+    gekantelde.forEach(({mid,isKO,totoVoor,totoFinaal,punten})=>{
       const pred=(isKO?predKO:predGroep)[mid];
       if(!pred||pred.home===undefined||pred.home===null||pred.home===""||pred.away===undefined||pred.away===null||pred.away==="") return;
       const totoVoorspeld=calcToto(pred.home,pred.away);
       const matchteVoor=totoVoorspeld===totoVoor;
       const matchteFinaal=totoVoorspeld===totoFinaal;
-      if(matchteVoor&&!matchteFinaal) pech++;
-      else if(!matchteVoor&&matchteFinaal) geluk++;
+      if(matchteVoor&&!matchteFinaal){pech++;puntenPech+=punten;}
+      else if(!matchteVoor&&matchteFinaal){geluk++;puntenGeluk+=punten;}
     });
-    return {deelnemer:p, geluk, pech, saldo:geluk-pech};
+    return {
+      deelnemer:p, geluk, pech, saldo:geluk-pech,
+      puntenGeluk, puntenPech, puntenSaldo:puntenGeluk-puntenPech,
+    };
   });
   return {resultaten, aantalGekanteldeWedstrijden:gekantelde.length};
 }
@@ -2911,8 +2920,11 @@ function HomeView({setView,ctx}){
                 <span style={{fontSize:11,color:COLORS.gray,width:16,flexShrink:0}}>{i+1}.</span>
                 <span style={{flex:1,fontSize:13,fontWeight:600,color:COLORS.dark}}>{r.deelnemer.first_name} {r.deelnemer.last_name}</span>
                 <span style={{fontSize:11,color:COLORS.gray,whiteSpace:"nowrap"}}>🍀{r.geluk} ☔{r.pech}</span>
-                <span style={{fontSize:13,fontWeight:800,color:r.saldo>0?COLORS.green:r.saldo<0?"#c62828":COLORS.gray,minWidth:28,textAlign:"right"}}>
+                <span style={{fontSize:13,fontWeight:800,color:r.saldo>0?COLORS.green:r.saldo<0?"#c62828":COLORS.gray,minWidth:24,textAlign:"right"}}>
                   {r.saldo>0?"+":""}{r.saldo}
+                </span>
+                <span style={{fontSize:11,color:COLORS.gray,minWidth:38,textAlign:"right",whiteSpace:"nowrap"}}>
+                  ({r.puntenSaldo>0?"+":""}{r.puntenSaldo}pt)
                 </span>
               </div>
             ))}
@@ -2922,7 +2934,7 @@ function HomeView({setView,ctx}){
           <div style={S.card}>
             <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:14}}>
               <h2 style={{...S.h2,margin:0}}>🍀 Lucky bastards & ☔ Pechvogels</h2>
-              <Tooltip text={`Gebaseerd op ${aantalGekanteldeWedstrijden} wedstrijd${aantalGekanteldeWedstrijden===1?"":"en"} die door een laat doelpunt (minuut 86+, reguliere speeltijd) van toto veranderde(n). Geluk = je had daardoor punten die je anders niet had gehad. Pech = je verloor daardoor punten die je al te pakken had.`}/>
+              <Tooltip text={`Gebaseerd op ${aantalGekanteldeWedstrijden} wedstrijd${aantalGekanteldeWedstrijden===1?"":"en"} die door een laat doelpunt (minuut 86+, reguliere speeltijd) van toto veranderde(n). Geluk = je kreeg daardoor toto-punten die je anders niet had gehad. Pech = je verloor daardoor toto-punten die je al te pakken had. Het puntensaldo tussen haakjes (3 pt/wedstrijd groepsfase, 6 pt/wedstrijd KO-fase) is een MINIMUM — exacte-score-punten die je door hetzelfde late doelpunt mogelijk ook kwijtraakte, zitten hier niet in.`}/>
             </div>
             <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
               <Lijst titel="Lucky bastards" icon="🍀" data={lucky} kleur={COLORS.green}/>

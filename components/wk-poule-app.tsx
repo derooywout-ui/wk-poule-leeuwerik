@@ -2904,9 +2904,9 @@ function HomeView({setView,ctx}){
         const {resultaten,aantalGekanteldeWedstrijden}=berekenGelukPech(ctx);
         if(aantalGekanteldeWedstrijden===0) return null;
         const lucky=[...resultaten].filter(r=>r.saldo>0||r.geluk>0)
-          .sort((a,b)=>b.saldo-a.saldo||b.geluk-a.geluk).slice(0,15);
+          .sort((a,b)=>b.saldo-a.saldo||b.puntenSaldo-a.puntenSaldo).slice(0,15);
         const pech=[...resultaten].filter(r=>r.saldo<0||r.pech>0)
-          .sort((a,b)=>a.saldo-b.saldo||b.pech-a.pech).slice(0,15);
+          .sort((a,b)=>a.saldo-b.saldo||a.puntenSaldo-b.puntenSaldo).slice(0,15);
         if(lucky.length===0&&pech.length===0) return null;
         const Lijst=({titel,icon,data,kleur})=>(
           <div style={{flex:"1 1 260px",minWidth:240}}>

@@ -3881,7 +3881,7 @@ function DeelnemerOverlay({p, ctx, onClose}){
           {louisVerslag&&(
             <button onClick={()=>setToonLouis(true)} style={{
               width:"100%",marginBottom:16,padding:"12px 16px",borderRadius:10,
-              background:"linear-gradient(135deg,#0f6e56,#1a9c73)",color:"#fff",border:"none",
+              background:"linear-gradient(135deg,#fec72f,#ffd863)",color:COLORS.dark,border:"none",
               fontWeight:800,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,
             }}>🎙 De analyse van Louis</button>
           )}
@@ -4155,12 +4155,12 @@ function DeelnemerOverlay({p, ctx, onClose}){
             background:"#fff",borderRadius:14,width:"100%",maxWidth:560,
             boxShadow:"0 8px 40px rgba(0,0,0,0.3)",
           }}>
-            <div style={{background:"linear-gradient(135deg,#0f6e56,#1a9c73)",color:"#fff",padding:"18px 22px",borderRadius:"14px 14px 0 0",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div style={{background:"linear-gradient(135deg,#fec72f,#ffd863)",color:COLORS.dark,padding:"18px 22px",borderRadius:"14px 14px 0 0",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               <div>
                 <div style={{fontWeight:800,fontSize:17}}>🎙 De analyse van Louis</div>
-                <div style={{fontSize:12,opacity:0.85,marginTop:2}}>{p.first_name} {p.last_name}</div>
+                <div style={{fontSize:12,opacity:0.75,marginTop:2}}>{p.first_name} {p.last_name}</div>
               </div>
-              <button onClick={()=>setToonLouis(false)} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:14,fontWeight:700}}>✕</button>
+              <button onClick={()=>setToonLouis(false)} style={{background:"rgba(0,0,0,0.12)",border:"none",color:COLORS.dark,borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:14,fontWeight:700}}>✕</button>
             </div>
             <div style={{padding:"22px",fontSize:14,lineHeight:1.7,color:C.dark,whiteSpace:"pre-line"}}>
               {louisVerslag}
@@ -4243,6 +4243,17 @@ const KO_ROUND_MAP = {
 
 function StandingsView({ctx}){
   const [selectedP,setSelectedP]=React.useState(null);
+
+  // Welke deelnemers al een "Analyse van Louis" hebben — lichte query (alleen
+  // ID's), zodat we per rij een geel "Analyse"-badge kunnen tonen zonder 63
+  // losse fetches te doen.
+  const [verslagenIds,setVerslagenIds]=React.useState(null);
+  React.useEffect(()=>{
+    (async()=>{
+      const rows=await db.get("eindverslagen","select=participant_id");
+      setVerslagenIds(new Set((rows||[]).map(r=>r.participant_id)));
+    })();
+  },[]);
 
   // ─── FILTER STATE ──────────────────────────────────────────────────────────
   const ALLE_RONDES = [
@@ -4564,7 +4575,12 @@ function StandingsView({ctx}){
                   <td style={{...S.td,...vlijn}}>{p.rang===1?"🥇":p.rang===2?"🥈":p.rang===3?"🥉":p.rang}</td>
                   <td style={{...S.tdc,...vlijn}}><TrendBadge uid={p.id}/></td>
                   <td style={{...S.td,fontWeight:600,cursor:"pointer",color:COLORS.green,...vlijn}} onClick={()=>setSelectedP(p)}>
-                    {p.first_name} {p.last_name} <span style={{fontSize:12,opacity:0.6}}>›</span>
+                    {p.first_name} {p.last_name}
+                    {verslagenIds&&verslagenIds.has(p.id)&&(
+                      <span style={{marginLeft:6,background:"#fec72f",color:COLORS.dark,fontSize:10,fontWeight:800,
+                        padding:"2px 7px",borderRadius:5,verticalAlign:"middle"}}>Analyse</span>
+                    )}
+                    {" "}<span style={{fontSize:12,opacity:0.6}}>›</span>
                   </td>
                   <td style={{...S.tdc,...markeer(p.gToto,maxToto),...vlijn}}>{p.gToto}</td>
                   <td style={{...S.tdc,...markeer(p.gExact,maxExact),...vlijn}}>{p.gExact}</td>

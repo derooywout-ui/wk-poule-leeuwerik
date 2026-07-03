@@ -281,6 +281,46 @@ function koScoreDisplay(match){
 // niets bijverzinnen, dus alles wat in het verslag moet kunnen staan, wordt hier
 // berekend — met exact dezelfde logica als het klassement (zelfde punten, zelfde
 // streak-definities), zodat verslag en klassement elkaar nooit tegenspreken.
+// ─── LUCKY BASTARDS / PECHVOGELS ─────────────────────────────────────────────
+// Berekent per deelnemer hoe vaak een laat doelpunt (min. 86+, reguliere
+// speeltijd) de toto van een wedstrijd deed "kantelen" — en of dat de
+// deelnemer punten KOSTTE (pech) of juist OPLEVERDE (geluk) t.o.v. de stand
+// vlak vóór dat late doelpunt. Alleen wedstrijden die de admin handmatig als
+// "gekanteld" heeft gemarkeerd tellen mee (zie AdminResults/KO-admin).
+//   - Pech: voorspelde toto matchte de stand-vóór, maar niet de eindstand
+//   - Geluk: voorspelde toto matchte de stand-vóór NIET, maar de eindstand wél
+//   - Overig (incl. geen voorspelling): telt niet mee
+function berekenGelukPech(ctx){
+  const gekantelde=[];
+  Object.entries(ctx.matchResults).forEach(([mid,r])=>{
+    if(r.gekanteld && r.toto_voor_kanteling && r.home!==null && r.home!==undefined){
+      gekantelde.push({mid, isKO:false, totoVoor:r.toto_voor_kanteling, totoFinaal:calcToto(r.home,r.away)});
+    }
+  });
+  (ctx.koMatches||[]).forEach(m=>{
+    if(m.gekanteld && m.toto_voor_kanteling && m.home_goals!==null && m.home_goals!==undefined){
+      gekantelde.push({mid:m.id, isKO:true, totoVoor:m.toto_voor_kanteling, totoFinaal:calcToto(m.home_goals,m.away_goals)});
+    }
+  });
+
+  const resultaten=ctx.participants.map(p=>{
+    let geluk=0, pech=0;
+    const predGroep=ctx.predictions[p.id]||{};
+    const predKO=ctx.koPredictions[p.id]||{};
+    gekantelde.forEach(({mid,isKO,totoVoor,totoFinaal})=>{
+      const pred=(isKO?predKO:predGroep)[mid];
+      if(!pred||pred.home===undefined||pred.home===null||pred.home===""||pred.away===undefined||pred.away===null||pred.away==="") return;
+      const totoVoorspeld=calcToto(pred.home,pred.away);
+      const matchteVoor=totoVoorspeld===totoVoor;
+      const matchteFinaal=totoVoorspeld===totoFinaal;
+      if(matchteVoor&&!matchteFinaal) pech++;
+      else if(!matchteVoor&&matchteFinaal) geluk++;
+    });
+    return {deelnemer:p, geluk, pech, saldo:geluk-pech};
+  });
+  return {resultaten, aantalGekanteldeWedstrijden:gekantelde.length};
+}
+
 function berekenAnalyseFeiten(deelnemer, ctx){
   const uid=deelnemer.id;
   const pred=ctx.predictions[uid]||{};
@@ -1145,7 +1185,7 @@ export default function App(){
     if(parts) setParticipants(parts);
     if(results){
       const m={};
-      results.forEach(r=>{m[r.match_id]={home:r.home_goals,away:r.away_goals};});
+      results.forEach(r=>{m[r.match_id]={home:r.home_goals,away:r.away_goals,gekanteld:r.gekanteld,toto_voor_kanteling:r.toto_voor_kanteling};});
       setMatchResults(m);
     }
     if(preds){
@@ -2846,6 +2886,48 @@ function HomeView({setView,ctx}){
                 </div>
               );
             })()}
+          </div>
+        );
+      })()}
+
+      {/* Lucky bastards / Pechvogels */}
+      {(()=>{
+        const {resultaten,aantalGekanteldeWedstrijden}=berekenGelukPech(ctx);
+        if(aantalGekanteldeWedstrijden===0) return null;
+        const lucky=[...resultaten].filter(r=>r.saldo>0||r.geluk>0)
+          .sort((a,b)=>b.saldo-a.saldo||b.geluk-a.geluk).slice(0,15);
+        const pech=[...resultaten].filter(r=>r.saldo<0||r.pech>0)
+          .sort((a,b)=>a.saldo-b.saldo||b.pech-a.pech).slice(0,15);
+        if(lucky.length===0&&pech.length===0) return null;
+        const Lijst=({titel,icon,data,kleur})=>(
+          <div style={{flex:"1 1 260px",minWidth:240}}>
+            <div style={{fontWeight:800,fontSize:13,color:kleur,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+              <span>{icon}</span><span>{titel}</span>
+            </div>
+            {data.length===0?(
+              <div style={{fontSize:12,color:COLORS.gray,fontStyle:"italic"}}>Nog niemand</div>
+            ):data.map((r,i)=>(
+              <div key={r.deelnemer.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderBottom:i<data.length-1?`1px solid ${COLORS.border}`:"none"}}>
+                <span style={{fontSize:11,color:COLORS.gray,width:16,flexShrink:0}}>{i+1}.</span>
+                <span style={{flex:1,fontSize:13,fontWeight:600,color:COLORS.dark}}>{r.deelnemer.first_name} {r.deelnemer.last_name}</span>
+                <span style={{fontSize:11,color:COLORS.gray,whiteSpace:"nowrap"}}>🍀{r.geluk} ☔{r.pech}</span>
+                <span style={{fontSize:13,fontWeight:800,color:r.saldo>0?COLORS.green:r.saldo<0?"#c62828":COLORS.gray,minWidth:28,textAlign:"right"}}>
+                  {r.saldo>0?"+":""}{r.saldo}
+                </span>
+              </div>
+            ))}
+          </div>
+        );
+        return(
+          <div style={S.card}>
+            <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:14}}>
+              <h2 style={{...S.h2,margin:0}}>🍀 Lucky bastards & ☔ Pechvogels</h2>
+              <Tooltip text={`Gebaseerd op ${aantalGekanteldeWedstrijden} wedstrijd${aantalGekanteldeWedstrijden===1?"":"en"} die door een laat doelpunt (minuut 86+, reguliere speeltijd) van toto veranderde(n). Geluk = je had daardoor punten die je anders niet had gehad. Pech = je verloor daardoor punten die je al te pakken had.`}/>
+            </div>
+            <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
+              <Lijst titel="Lucky bastards" icon="🍀" data={lucky} kleur={COLORS.green}/>
+              <Lijst titel="Pechvogels" icon="☔" data={pech} kleur="#c62828"/>
+            </div>
           </div>
         );
       })()}
@@ -5708,13 +5790,19 @@ function AdminResults({ctx}){
     }
     const mr=await db.get("match_results","select=*");
     if(mr){
-      const m={};mr.forEach(r=>{m[r.match_id]={home:r.home_goals,away:r.away_goals};});
+      const m={};mr.forEach(r=>{m[r.match_id]={home:r.home_goals,away:r.away_goals,gekanteld:r.gekanteld,toto_voor_kanteling:r.toto_voor_kanteling};});
       ctx.setMatchResults(m);
       // Save ranking snapshot after results update
       await saveRankingSnapshot(ctx.participants,ctx.predictions,m,ctx.koPredictions,ctx.koMatches,ctx.bonusScores,ctx.bonusQuestions,ctx.setRankingSnapshot);
     }
     setSaving(false);setSaved(true);setTimeout(()=>setSaved(false),2000);
   }
+  async function saveKanteling(mid,gekanteld,totoVoor){
+    const payload={gekanteld, toto_voor_kanteling: gekanteld?totoVoor:null};
+    await db.update("match_results",`match_id=eq.${mid}`,payload);
+    ctx.setMatchResults(p=>({...p,[mid]:{...p[mid],...payload}}));
+  }
+
   return(
     <div>
       <div style={S.alert("")}>Vul de officiële uitslagen in. Punten worden automatisch berekend.</div>
@@ -5735,17 +5823,41 @@ function AdminResults({ctx}){
             return matches.map(({mid,t1,t2})=>{
             const r=local[mid]||ctx.matchResults[mid]||{};
             const isSaved=ctx.matchResults[mid]&&ctx.matchResults[mid].home!==undefined;
+            const opgeslagenR=ctx.matchResults[mid]||{};
             return(
-              <div key={mid} style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
-                <div style={{flex:1}}>
-                  <MatchCard grp={grp} t1={t1} t2={t2} homeVal={r.home} awayVal={r.away} disabled={false}
-                    onHomeChange={v=>setScore(mid,"home",v)} onAwayChange={v=>setScore(mid,"away",v)}/>
+              <div key={mid} style={{marginBottom:6}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{flex:1}}>
+                    <MatchCard grp={grp} t1={t1} t2={t2} homeVal={r.home} awayVal={r.away} disabled={false}
+                      onHomeChange={v=>setScore(mid,"home",v)} onAwayChange={v=>setScore(mid,"away",v)}/>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"center",minWidth:60}}>
+                    <button style={{...S.btn("green"),padding:"6px 10px",fontSize:12}} onClick={()=>saveMatch(mid)} disabled={saving}>💾</button>
+                    {isSaved&&<button style={{...S.btn(),padding:"4px 8px",fontSize:11,background:"#fdecea",color:"#c62828"}} onClick={()=>resetMatch(mid)}>✕ Wis</button>}
+                    {savedMid===mid&&<span style={{fontSize:10,color:COLORS.green,fontWeight:700}}>✓ Opgeslagen</span>}
+                  </div>
                 </div>
-                <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"center",minWidth:60}}>
-                  <button style={{...S.btn("green"),padding:"6px 10px",fontSize:12}} onClick={()=>saveMatch(mid)} disabled={saving}>💾</button>
-                  {isSaved&&<button style={{...S.btn(),padding:"4px 8px",fontSize:11,background:"#fdecea",color:"#c62828"}} onClick={()=>resetMatch(mid)}>✕ Wis</button>}
-                  {savedMid===mid&&<span style={{fontSize:10,color:COLORS.green,fontWeight:700}}>✓ Opgeslagen</span>}
-                </div>
+                {/* Gekanteld door laat doelpunt (min. 86, reguliere speeltijd) —
+                    voor de "Lucky bastards / Pechvogels"-statistiek. Alleen
+                    relevant als de wedstrijd al een uitslag heeft. */}
+                {isSaved&&(
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2,paddingLeft:4}}>
+                    <label style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:COLORS.gray,cursor:"pointer"}}>
+                      <input type="checkbox" checked={!!opgeslagenR.gekanteld}
+                        onChange={e=>saveKanteling(mid,e.target.checked,opgeslagenR.toto_voor_kanteling||"D")}/>
+                      Gekanteld door laat doelpunt (min. 86+)
+                    </label>
+                    {opgeslagenR.gekanteld&&(
+                      <select style={{...S.input,width:"auto",padding:"2px 6px",fontSize:11}}
+                        value={opgeslagenR.toto_voor_kanteling||"D"}
+                        onChange={e=>saveKanteling(mid,true,e.target.value)}>
+                        <option value="W">Toto vóór: Thuis wint</option>
+                        <option value="D">Toto vóór: Gelijkspel</option>
+                        <option value="L">Toto vóór: Uit wint</option>
+                      </select>
+                    )}
+                  </div>
+                )}
               </div>
             );
           });})()}
@@ -5918,6 +6030,12 @@ function AdminKO({ctx}){
     if(kom) ctx.setKoMatches(kom);
   }
 
+  async function saveKantelingKO(matchId,gekanteld,totoVoor){
+    const payload={gekanteld, toto_voor_kanteling: gekanteld?totoVoor:null};
+    await db.update("ko_matches",`id=eq.${matchId}`,payload);
+    ctx.setKoMatches(p=>p.map(m=>m.id===matchId?{...m,...payload}:m));
+  }
+
   const matchesByRound=KO_ROUNDS.map(r=>({...r,
     matches:ctx.koMatches.filter(m=>m.round_id===r.id).sort((a,b)=>{
       if(a.kickoff&&b.kickoff) return new Date(a.kickoff)-new Date(b.kickoff);
@@ -6001,6 +6119,24 @@ function AdminKO({ctx}){
                           Weergave: {preview.main}{preview.mainSuffix?` ${preview.mainSuffix}`:""}{preview.caption?` — ${preview.caption}`:""}
                         </div>
                       )}
+                      {/* Gekanteld door laat doelpunt (min. 86, reguliere speeltijd) —
+                          voor de "Lucky bastards / Pechvogels"-statistiek. */}
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8,justifyContent:"center",flexWrap:"wrap"}}>
+                        <label style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:COLORS.gray,cursor:"pointer"}}>
+                          <input type="checkbox" checked={!!match.gekanteld}
+                            onChange={e=>saveKantelingKO(match.id,e.target.checked,match.toto_voor_kanteling||"D")}/>
+                          Gekanteld door laat doelpunt (min. 86+)
+                        </label>
+                        {match.gekanteld&&(
+                          <select style={{...S.input,width:"auto",padding:"2px 6px",fontSize:11}}
+                            value={match.toto_voor_kanteling||"D"}
+                            onChange={e=>saveKantelingKO(match.id,true,e.target.value)}>
+                            <option value="W">Toto vóór: Thuis wint</option>
+                            <option value="D">Toto vóór: Gelijkspel</option>
+                            <option value="L">Toto vóór: Uit wint</option>
+                          </select>
+                        )}
+                      </div>
                     </div>
                   );
                 })()}

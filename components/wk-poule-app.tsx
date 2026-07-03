@@ -5484,6 +5484,10 @@ function AdminKO({ctx}){
     if(heeftScore){
       update.home_goals=(match.home_goals===null||match.home_goals===undefined||match.home_goals==="")?0:parseInt(match.home_goals);
       update.away_goals=(match.away_goals===null||match.away_goals===undefined||match.away_goals==="")?0:parseInt(match.away_goals);
+      // Markeer als handmatig ingevoerd: het Apps Script-correctievenster (dat
+      // API-geschreven uitslagen kort na afloop nog mag bijwerken) blijft hier
+      // dan altijd vanaf.
+      update.score_source="manual";
     }
     // Stand na verlenging (120 min) en strafschoppen — alleen opslaan als minstens
     // één kant is aangeraakt, net als bij de 90-minuten-uitslag. Blijft anders null
@@ -5511,7 +5515,7 @@ function AdminKO({ctx}){
   async function clearMatchResult(match){
     if(!window.confirm("Uitslag van deze wedstrijd wissen? (inclusief eventuele verlenging/strafschoppen)")) return;
     setSavingId(match.id);
-    await db.update("ko_matches",`id=eq.${match.id}`,{home_goals:null,away_goals:null,home_goals_et:null,away_goals_et:null,home_penalties:null,away_penalties:null});
+    await db.update("ko_matches",`id=eq.${match.id}`,{home_goals:null,away_goals:null,home_goals_et:null,away_goals_et:null,home_penalties:null,away_penalties:null,score_source:null});
     const kom=await db.get("ko_matches","select=*&order=match_num");
     if(kom) ctx.setKoMatches(kom);
     setSavingId(null);

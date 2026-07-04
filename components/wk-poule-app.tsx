@@ -555,7 +555,7 @@ function ScoreStepper({value,onChange,disabled}){
   );
 }
 
-function MatchCard({grp,t1,t2,homeVal,awayVal,onHomeChange,onAwayChange,disabled,onReset,onSave,onEdit,onCancel,isSaved,isEditing,showActions=false,officialResult=null}){
+function MatchCard({grp,t1,t2,homeVal,awayVal,onHomeChange,onAwayChange,disabled,onReset,onSave,onEdit,onCancel,isSaved,isEditing,showActions=false,officialResult=null,gekanteld,totoVoorKanteling,onGekanteldChange,onTotoVoorChange}){
   // Calculate points if official result known
   const filled2=homeVal!==null&&homeVal!==undefined&&homeVal!==""&&awayVal!==null&&awayVal!==undefined&&awayVal!=="";
   let pts=null;
@@ -657,6 +657,27 @@ function MatchCard({grp,t1,t2,homeVal,awayVal,onHomeChange,onAwayChange,disabled
             }}>✕ Annuleren</button>
           )}
         </div>
+        {/* Gekanteld door laat doelpunt (min. 86, reguliere speeltijd) — alleen
+            in admin-context (onGekanteldChange meegegeven) en alleen als de
+            wedstrijd al een uitslag heeft. Binnen hetzelfde kader als de rest
+            van de kaart, zodat nooit onduidelijk is bij welke wedstrijd dit
+            hoort (was eerder een los blokje ónder de kaart). */}
+        {onGekanteldChange&&isSaved&&(
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:8,paddingTop:8,borderTop:`1px dashed ${COLORS.border}`,flexWrap:"wrap"}}>
+            <label style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:COLORS.gray,cursor:"pointer"}}>
+              <input type="checkbox" checked={!!gekanteld} onChange={e=>onGekanteldChange(e.target.checked)}/>
+              Gekanteld door laat doelpunt (min. 86+)
+            </label>
+            {gekanteld&&(
+              <select style={{...S.input,width:"auto",padding:"2px 6px",fontSize:11}}
+                value={totoVoorKanteling||"D"} onChange={e=>onTotoVoorChange(e.target.value)}>
+                <option value="W">Toto vóór: Thuis wint</option>
+                <option value="D">Toto vóór: Gelijkspel</option>
+                <option value="L">Toto vóór: Uit wint</option>
+              </select>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -5856,7 +5877,11 @@ function AdminResults({ctx}){
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
                   <div style={{flex:1}}>
                     <MatchCard grp={grp} t1={t1} t2={t2} homeVal={r.home} awayVal={r.away} disabled={false}
-                      onHomeChange={v=>setScore(mid,"home",v)} onAwayChange={v=>setScore(mid,"away",v)}/>
+                      onHomeChange={v=>setScore(mid,"home",v)} onAwayChange={v=>setScore(mid,"away",v)}
+                      isSaved={isSaved}
+                      gekanteld={opgeslagenR.gekanteld} totoVoorKanteling={opgeslagenR.toto_voor_kanteling}
+                      onGekanteldChange={checked=>saveKanteling(mid,checked,opgeslagenR.toto_voor_kanteling||"D")}
+                      onTotoVoorChange={v=>saveKanteling(mid,true,v)}/>
                   </div>
                   <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"center",minWidth:60}}>
                     <button style={{...S.btn("green"),padding:"6px 10px",fontSize:12}} onClick={()=>saveMatch(mid)} disabled={saving}>💾</button>
@@ -5864,27 +5889,6 @@ function AdminResults({ctx}){
                     {savedMid===mid&&<span style={{fontSize:10,color:COLORS.green,fontWeight:700}}>✓ Opgeslagen</span>}
                   </div>
                 </div>
-                {/* Gekanteld door laat doelpunt (min. 86, reguliere speeltijd) —
-                    voor de "Lucky bastards / Pechvogels"-statistiek. Alleen
-                    relevant als de wedstrijd al een uitslag heeft. */}
-                {isSaved&&(
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2,paddingLeft:4}}>
-                    <label style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:COLORS.gray,cursor:"pointer"}}>
-                      <input type="checkbox" checked={!!opgeslagenR.gekanteld}
-                        onChange={e=>saveKanteling(mid,e.target.checked,opgeslagenR.toto_voor_kanteling||"D")}/>
-                      Gekanteld door laat doelpunt (min. 86+)
-                    </label>
-                    {opgeslagenR.gekanteld&&(
-                      <select style={{...S.input,width:"auto",padding:"2px 6px",fontSize:11}}
-                        value={opgeslagenR.toto_voor_kanteling||"D"}
-                        onChange={e=>saveKanteling(mid,true,e.target.value)}>
-                        <option value="W">Toto vóór: Thuis wint</option>
-                        <option value="D">Toto vóór: Gelijkspel</option>
-                        <option value="L">Toto vóór: Uit wint</option>
-                      </select>
-                    )}
-                  </div>
-                )}
               </div>
             );
           });})()}

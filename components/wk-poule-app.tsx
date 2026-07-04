@@ -484,6 +484,20 @@ function berekenAnalyseFeiten(deelnemer, ctx){
   }
 
   const totaal=gToto+gExact+gDoorstoot+koToto+koExact+bonus;
+
+  // ── Geluk/pech: hergebruikt berekenGelukPech (zelfde bron als het homepage-
+  // blok "Lucky bastards & Pechvogels"), zodat het verslag nooit iets anders
+  // beweert dan wat er publiek op de site staat. Weglaten als er niks gebeurde
+  // (geen enkele gekantelde wedstrijd geraakt) — dan is er niks te vertellen.
+  const gelukPechAlles=berekenGelukPech(ctx);
+  const eigenGelukPech=gelukPechAlles.resultaten.find(r=>r.deelnemer.id===uid);
+  const gelukPechFeit=(eigenGelukPech&&(eigenGelukPech.geluk>0||eigenGelukPech.pech>0))?{
+    aantal_geluk:eigenGelukPech.geluk,
+    aantal_pech:eigenGelukPech.pech,
+    saldo:eigenGelukPech.saldo,
+    punten_saldo_minimaal:eigenGelukPech.puntenSaldo,
+  }:null;
+
   return {
     naam:`${deelnemer.first_name} ${deelnemer.last_name}`,
     totaal_deelnemers:ctx.participants.length,
@@ -499,6 +513,7 @@ function berekenAnalyseFeiten(deelnemer, ctx){
     poule_gemiddelde:{toto_goed:nDeel?Math.round(somToto/nDeel*10)/10:null, exact_goed:nDeel?Math.round(somExact/nDeel*10)/10:null, bonuspunten:nDeel?Math.round(somBonus/nDeel):null},
     concurrent:concurrent?{naam:`${concurrent.first_name} ${concurrent.last_name}`, gemiddeld_posities_verschil:Math.round(kleinsteAfstand*10)/10}:null,
     wereldkampioen:kampioenFeit,
+    geluk_pech:gelukPechFeit,
   };
 }
 

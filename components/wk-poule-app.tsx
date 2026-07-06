@@ -390,16 +390,23 @@ function berekenPouleGemiddelden(ctx){
   // Bonus-gemiddelde als PERCENTAGE (aantal vragen goed beoordeeld / totaal
   // vragen) — een andere eenheid dan avgBonus hierboven (dat zijn ruwe,
   // punten-gewogen bonuspunten, gebruikt in de AI-feiten). Deze pct-versie is
-  // voor het Louis-schema-tabelletje, waar alle rijen in percentages staan.
+  // voor het Louis-schema-tabelletje én voor "zwakste onderdeel", waar alle
+  // rijen/categorieën in percentages staan.
+  // BELANGRIJK: alleen meegeteld als de deelnemer de bonusvragen ook echt heeft
+  // ingevuld (ctx.bonusAnswers niet leeg) — iemand die niets invulde (bijv.
+  // Peter Smulders) telt anders onterecht mee als 0%, wat het gemiddelde
+  // kunstmatig omlaag trekt voor iets wat hij nooit geprobeerd heeft.
   const totaalBonusVragen=(ctx.bonusQuestions||[]).length;
   let avgBonusPct=null;
   if(totaalBonusVragen>0){
-    const bonusPcts=ctx.participants.map(p=>{
-      let goed=0;
-      Object.values(ctx.bonusScores[p.id]||{}).forEach(v=>{ if(v===true) goed++; });
-      return goed/totaalBonusVragen;
-    });
-    avgBonusPct=Math.round(bonusPcts.reduce((s,v)=>s+v,0)/bonusPcts.length*100);
+    const bonusPcts=ctx.participants
+      .filter(p=>Object.keys(ctx.bonusAnswers[p.id]||{}).length>0)
+      .map(p=>{
+        let goed=0;
+        Object.values(ctx.bonusScores[p.id]||{}).forEach(v=>{ if(v===true) goed++; });
+        return goed/totaalBonusVragen;
+      });
+    avgBonusPct=bonusPcts.length>0?Math.round(bonusPcts.reduce((s,v)=>s+v,0)/bonusPcts.length*100):null;
   }
 
   return {ratiosGekwalificeerd,koRatios,DREMPEL,avgGroepToto,avgGroepExact,avgKoToto,avgKoExact,koTotaalIngevuld,avgDoorstoot,avgBonus,avgBonusPct};
@@ -644,7 +651,7 @@ function berekenAnalyseFeiten(deelnemer, ctx){
   }:null;
 
   // ── Poulegemiddelden: gedeelde functie, zelfde cijfers als de homepage ──
-  const {avgGroepToto,avgGroepExact,avgKoToto,avgKoExact,avgDoorstoot,avgBonus}=berekenPouleGemiddelden(ctx);
+  const {avgGroepToto,avgGroepExact,avgKoToto,avgKoExact,avgDoorstoot,avgBonus,avgBonusPct}=berekenPouleGemiddelden(ctx);
 
   // ── Percentages vooraf berekenen (i.p.v. Louis ter plekke te laten rekenen —
   // dat leidde eerder tot een verwarde/haperende zin toen hij een percentage met
@@ -667,13 +674,22 @@ function berekenAnalyseFeiten(deelnemer, ctx){
   // Iedere deelnemer heeft altijd een zwakste onderdeel, ook de koploper — er
   // is geen perfecte score, dus dit hoeft nooit negatief/kritisch gebracht te
   // worden, wel altijd als basis voor de afsluittip (zie ANALYSE_PROMPT 7c).
+  // Bonusvragen als PERCENTAGE (aantal goed / totaal vragen), niet als ruwe
+  // punten — dezelfde maatstaf als avgBonusPct en als de "Onderdeel in
+  // cijfers"-tabel (berekenLouisSchema). Voorheen gebruikte dit blok bonus/
+  // avgBonus (punten-gewogen), wat in theorie een andere zwakste-onderdeel-
+  // uitkomst kon geven dan wat de tabel liet zien — nu altijd consistent.
+  const totaalBonusVragen=(ctx.bonusQuestions||[]).length;
+  const zelfEntry=alleTotalen.find(t=>t.participant.id===uid);
+  const bonusPctZelf=(zelfEntry&&totaalBonusVragen>0)?Math.round(zelfEntry.bonusGoed/totaalBonusVragen*100):null;
+
   const kandidaten=[
     {categorie:"groepsfase_toto", zelf:groepTotoPct, gem:avgGroepToto},
     {categorie:"groepsfase_exact", zelf:groepExactPct, gem:avgGroepExact},
     {categorie:"ko_toto", zelf:koTotoPct, gem:avgKoToto},
     {categorie:"ko_exact", zelf:koExactPct, gem:avgKoExact},
     {categorie:"doorstoot", zelf:doorstootPct, gem:avgDoorstoot},
-    {categorie:"bonusvragen", zelf:bonus, gem:avgBonus},
+    {categorie:"bonusvragen", zelf:bonusPctZelf, gem:avgBonusPct},
   ].filter(k=>k.zelf!==null&&k.gem!==null&&k.gem!==0)
    .map(k=>({...k, relatieveAfwijking:(k.zelf-k.gem)/k.gem}));
   let zwaksteOnderdeel=null;

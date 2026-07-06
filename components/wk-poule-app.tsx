@@ -296,6 +296,71 @@ function koScoreDisplay(match){
 // exact goed, dan ben je die extra exacte-punten óók kwijtgeraakt, maar dat
 // zit niet in dit cijfer (zie toelichting/tooltip bij het homepage-blok).
 const GROEP_TOTO_PTS = 3;
+// ─── POULEGEMIDDELDEN (GROEP + KO) ───────────────────────────────────────────
+// Eén bron van waarheid voor "hoe goed doet de gemiddelde deelnemer het",
+// gebruikt door zowel het "Opvallend"-blok op de homepage als "De analyse van
+// Louis" — zodat die twee elkaar nooit kunnen tegenspreken. Groepsfase: gemiddelde
+// van de PERCENTAGES van gekwalificeerde deelnemers (≥50 van 72 ingevuld, zelfde
+// drempel als de homepage-lijst). KO-fase: CUMULATIEF (som van alle correcte
+// voorspellingen / som van alle ingevulde voorspellingen) — geen drempel, want de
+// KO-fase groeit nog en te weinig deelnemers zouden anders kwalificeren.
+function berekenPouleGemiddelden(ctx){
+  const playedMids=Object.keys(ctx.matchResults).filter(mid=>ctx.matchResults[mid]&&ctx.matchResults[mid].home!==null);
+  const allMids=Object.keys(MATCH_SCHEDULE);
+  const ratios=ctx.participants.map(p=>{
+    const pred=ctx.predictions[p.id]||{};
+    let totoOk=0,exactOk=0,total=0;
+    const aantalIngevuld=allMids.filter(mid=>{
+      const pp=pred[mid];
+      return pp&&pp.home!==undefined&&pp.home!==null&&pp.away!==undefined&&pp.away!==null;
+    }).length;
+    playedMids.forEach(mid=>{
+      const pp=pred[mid];
+      const r=ctx.matchResults[mid];
+      if(!pp||pp.home===undefined||pp.home===null||pp.away===undefined||pp.away===null) return;
+      total++;
+      const ex=parseInt(pp.home)===parseInt(r.home)&&parseInt(pp.away)===parseInt(r.away);
+      const to=calcToto(pp.home,pp.away)===calcToto(r.home,r.away);
+      if(ex){totoOk++;exactOk++;}else if(to){totoOk++;}
+    });
+    return{name:`${p.first_name} ${p.last_name}`,participant:p,totoOk,exactOk,total,aantalIngevuld};
+  }).filter(r=>r.total>0);
+
+  const DREMPEL=50;
+  const ratiosGekwalificeerd=ratios.filter(r=>r.aantalIngevuld>=DREMPEL);
+  const avgGroepToto=ratiosGekwalificeerd.length>0
+    ? Math.round(ratiosGekwalificeerd.reduce((s,r)=>s+r.totoOk/r.total,0)/ratiosGekwalificeerd.length*100)
+    : null;
+  const avgGroepExact=ratiosGekwalificeerd.length>0
+    ? Math.round(ratiosGekwalificeerd.reduce((s,r)=>s+r.exactOk/r.total,0)/ratiosGekwalificeerd.length*100)
+    : null;
+
+  const gespeeldeKO=(ctx.koMatches||[]).filter(m=>m.home_goals!==null&&m.home_goals!==undefined&&m.home_team&&m.away_team);
+  const koRatios=ctx.participants.map(p=>{
+    const kpred=ctx.koPredictions[p.id]||{};
+    let totoOk=0,exactOk=0,total=0;
+    gespeeldeKO.forEach(m=>{
+      const pp=kpred[m.id];
+      if(!pp||pp.home===undefined||pp.home===null||pp.away===undefined||pp.away===null) return;
+      total++;
+      const ex=parseInt(pp.home)===parseInt(m.home_goals)&&parseInt(pp.away)===parseInt(m.away_goals);
+      const to=calcToto(pp.home,pp.away)===calcToto(m.home_goals,m.away_goals);
+      if(ex){totoOk++;exactOk++;}else if(to){totoOk++;}
+    });
+    return{name:`${p.first_name} ${p.last_name}`,participant:p,totoOk,exactOk,total};
+  }).filter(r=>r.total>0);
+
+  const koTotaalIngevuld=koRatios.reduce((s,r)=>s+r.total,0);
+  const avgKoToto=koTotaalIngevuld>0
+    ? Math.round(koRatios.reduce((s,r)=>s+r.totoOk,0)/koTotaalIngevuld*100)
+    : null;
+  const avgKoExact=koTotaalIngevuld>0
+    ? Math.round(koRatios.reduce((s,r)=>s+r.exactOk,0)/koTotaalIngevuld*100)
+    : null;
+
+  return {ratiosGekwalificeerd,koRatios,DREMPEL,avgGroepToto,avgGroepExact,avgKoToto,avgKoExact,koTotaalIngevuld};
+}
+
 function berekenGelukPech(ctx){
   const gekantelde=[];
   Object.entries(ctx.matchResults).forEach(([mid,r])=>{
@@ -425,30 +490,64 @@ function berekenAnalyseFeiten(deelnemer, ctx){
     if(n>=5){const gem=som/n;if(gem<kleinsteAfstand){kleinsteAfstand=gem;concurrent=q;}}
   });
 
-  // ── Poulegemiddelden (voor de vergelijking) ──
-  let somToto=0,somExact=0,somBonus=0,nDeel=0;
+  // ── Koploper/winnaar (voor perspectief naast de concurrent) + bonusgemiddelde ──
+  // Zelfde puntenformule als het klassement, over alle deelnemers heen — zowel om
+  // de huidige koploper te vinden (bij afronding na de finale: de daadwerkelijke
+  // winnaar) als om het gemiddelde aantal bonuspunten te berekenen (dat zit niet
+  // in berekenPouleGemiddelden, want die gaat alleen over de toto/exact-ratio's).
+  let somBonus=0,nDeel=0,koploper=null,hoogsteTotaal=-Infinity;
   ctx.participants.forEach(q=>{
     const qp=ctx.predictions[q.id]||{};const qk=ctx.koPredictions[q.id]||{};
-    let t=0,e=0,b=0;
+    let qGToto=0,qGExact=0,qGDoorstoot=0,qKoToto=0,qKoExact=0,qBonus=0;
     Object.entries(ctx.matchResults).forEach(([mid,r])=>{
       if(r.home===null||r.home===undefined)return;
       const pp=qp[mid];if(!pp||pp.home===undefined||pp.home==="")return;
       const ex=parseInt(pp.home)===parseInt(r.home)&&parseInt(pp.away)===parseInt(r.away);
       const to=calcToto(pp.home,pp.away)===calcToto(r.home,r.away);
-      if(ex){t++;e++;}else if(to){t++;}
+      if(ex){qGToto+=3;qGExact+=2;}else if(to){qGToto+=3;}
     });
+    const qPredAdv=calcDoorstootFromPredictions(qp);
+    if(ctx.doorstootLanden&&ctx.doorstootLanden.length>0){
+      qPredAdv.forEach(t=>{
+        const enNaam=NL_TO_EN_ALIAS[t]||t.toLowerCase();
+        if(ctx.doorstootLanden.includes(enNaam)) qGDoorstoot+=DOORSTOOT_PTS;
+      });
+    }
     ctx.koMatches.forEach(m=>{
       if(!m.home_team||m.home_goals===null||m.home_goals===undefined)return;
       const pp=qk[m.id];if(!pp||pp.home===null||pp.home===undefined)return;
       const ex=parseInt(pp.home)===parseInt(m.home_goals)&&parseInt(pp.away)===parseInt(m.away_goals);
       const to=calcToto(pp.home,pp.away)===calcToto(m.home_goals,m.away_goals);
-      if(ex){t++;e++;}else if(to){t++;}
+      if(ex){qKoToto+=KO_TOTO_PTS;qKoExact+=(KO_EXACT_PTS-KO_TOTO_PTS);}else if(to){qKoToto+=KO_TOTO_PTS;}
     });
     Object.entries(ctx.bonusScores[q.id]||{}).forEach(([qi,v])=>{
-      if(v){const qq=ctx.bonusQuestions.find(bq=>String(bq.idx)===String(qi));b+=(qq?.points??20);}
+      if(v){const qq=ctx.bonusQuestions.find(bq=>String(bq.idx)===String(qi));qBonus+=(qq?.points??20);}
     });
-    somToto+=t;somExact+=e;somBonus+=b;nDeel++;
+    const qTotaal=qGToto+qGExact+qGDoorstoot+qKoToto+qKoExact+qBonus;
+    somBonus+=qBonus;nDeel++;
+    if(qTotaal>hoogsteTotaal){hoogsteTotaal=qTotaal;koploper=q;}
   });
+  const totaal=gToto+gExact+gDoorstoot+koToto+koExact+bonus;
+  const winnaarFeit=(koploper&&koploper.id!==uid)?{
+    naam:`${koploper.first_name} ${koploper.last_name}`,
+    punten:hoogsteTotaal,
+    verschil:hoogsteTotaal-totaal,
+  }:null;
+
+  // ── Poulegemiddelden: gedeelde functie, zelfde cijfers als de homepage ──
+  const {avgGroepToto,avgGroepExact,avgKoToto,avgKoExact}=berekenPouleGemiddelden(ctx);
+
+  // ── Percentages vooraf berekenen (i.p.v. Louis ter plekke te laten rekenen —
+  // dat leidde eerder tot een verwarde/haperende zin toen hij een percentage met
+  // een aantal probeerde te vergelijken) ──
+  const groepTotoPct=gespeeldGroep>0?Math.round(totoGoedGroep/gespeeldGroep*100):null;
+  const groepExactPct=gespeeldGroep>0?Math.round(exactGoedGroep/gespeeldGroep*100):null;
+  const koTotoPct=gespeeldKO>0?Math.round(totoGoedKO/gespeeldKO*100):null;
+  const koExactPct=gespeeldKO>0?Math.round(exactGoedKO/gespeeldKO*100):null;
+  // Max. aantal doorstoot-landen: dynamisch afgeleid (aantal r16-wedstrijden x 2),
+  // i.p.v. hardgecodeerd — blijft dan kloppen ook als het toernooiformat wijzigt.
+  const maxDoorstoot=(ctx.koMatches||[]).filter(m=>m.round_id==="r16").length*2;
+  const doorstootPct=maxDoorstoot>0?Math.round(doorstootGoed/maxDoorstoot*100):null;
 
   // ── Wereldkampioen-bonusvraag (defensief: alleen als vraag vindbaar én finale gespeeld) ──
   let kampioenFeit=null;
@@ -483,8 +582,6 @@ function berekenAnalyseFeiten(deelnemer, ctx){
     }
   }
 
-  const totaal=gToto+gExact+gDoorstoot+koToto+koExact+bonus;
-
   // ── Geluk/pech: hergebruikt berekenGelukPech (zelfde bron als het homepage-
   // blok "Lucky bastards & Pechvogels"), zodat het verslag nooit iets anders
   // beweert dan wat er publiek op de site staat. Weglaten als er niks gebeurde
@@ -504,14 +601,18 @@ function berekenAnalyseFeiten(deelnemer, ctx){
     eindpositie:huidigRank, start_positie:startRank,
     hoogste_positie_ooit:hoogste, laagste_positie_ooit:laagste,
     punten:{totaal, groepsfase:gToto+gExact, doorstoot:gDoorstoot, ko_fase:koToto+koExact, bonusvragen:bonus},
-    groepsfase:{wedstrijden:gespeeldGroep, toto_goed:totoGoedGroep, exact_goed:exactGoedGroep},
-    ko_fase:{wedstrijden:gespeeldKO, toto_goed:totoGoedKO, exact_goed:exactGoedKO},
-    doorstoot_landen_goed:doorstootGoed,
+    groepsfase:{wedstrijden:gespeeldGroep, toto_goed:totoGoedGroep, toto_pct:groepTotoPct, exact_goed:exactGoedGroep, exact_pct:groepExactPct},
+    ko_fase:{wedstrijden:gespeeldKO, toto_goed:totoGoedKO, toto_pct:koTotoPct, exact_goed:exactGoedKO, exact_pct:koExactPct},
+    doorstoot:{landen_goed:doorstootGoed, landen_max:maxDoorstoot>0?maxDoorstoot:null, pct:doorstootPct},
     langste_toto_reeks:maxTotoStreak,
     langste_exact_reeks:maxExactStreak,
     exact_goed_bij_wedstrijd_met_5plus_doelpunten:exactBijDoelrijk,
-    poule_gemiddelde:{toto_goed:nDeel?Math.round(somToto/nDeel*10)/10:null, exact_goed:nDeel?Math.round(somExact/nDeel*10)/10:null, bonuspunten:nDeel?Math.round(somBonus/nDeel):null},
+    // Poulegemiddelden zijn PERCENTAGES, per fase apart (groep vs KO) — zelfde
+    // cijfers als het "Opvallend"-blok op de homepage. Vergelijk dus altijd
+    // groepsfase-percentage met groepsfase-gemiddelde, KO met KO — nooit kruislings.
+    poule_gemiddelde:{groepsfase_toto_pct:avgGroepToto, groepsfase_exact_pct:avgGroepExact, ko_toto_pct:avgKoToto, ko_exact_pct:avgKoExact, bonuspunten:nDeel?Math.round(somBonus/nDeel):null},
     concurrent:concurrent?{naam:`${concurrent.first_name} ${concurrent.last_name}`, gemiddeld_posities_verschil:Math.round(kleinsteAfstand*10)/10}:null,
+    winnaar:winnaarFeit,
     wereldkampioen:kampioenFeit,
     geluk_pech:gelukPechFeit,
   };
@@ -2435,78 +2536,15 @@ function HomeView({setView,ctx}){
           }
         }
 
-        // ── Ratio groep toto & exact ──
-        const playedMids=Object.keys(ctx.matchResults).filter(mid=>ctx.matchResults[mid]&&ctx.matchResults[mid].home!==null);
-        // Tel per deelnemer ook hoeveel wedstrijden ze hebben ingevuld (van alle 72)
-        const allMids=Object.keys(MATCH_SCHEDULE);
-        const ratios=ctx.participants.map(p=>{
-          const pred=ctx.predictions[p.id]||{};
-          let totoOk=0,exactOk=0,total=0;
-          // Aantal ingevulde voorspellingen (van alle 72, niet alleen gespeeld)
-          const aantalIngevuld=allMids.filter(mid=>{
-            const pp=pred[mid];
-            return pp&&pp.home!==undefined&&pp.home!==null&&pp.away!==undefined&&pp.away!==null;
-          }).length;
-          playedMids.forEach(mid=>{
-            const pp=pred[mid];
-            const r=ctx.matchResults[mid];
-            if(!pp||pp.home===undefined||pp.home===null||pp.away===undefined||pp.away===null) return;
-            total++;
-            const ex=parseInt(pp.home)===parseInt(r.home)&&parseInt(pp.away)===parseInt(r.away);
-            const to=calcToto(pp.home,pp.away)===calcToto(r.home,r.away);
-            if(ex){totoOk++;exactOk++;}else if(to){totoOk++;}
-          });
-          return{name:`${p.first_name} ${p.last_name}`,participant:p,totoOk,exactOk,total,aantalIngevuld};
-        }).filter(r=>r.total>0);
-
-        // Drempel: minimaal 50 van 72 wedstrijden ingevuld
-        const DREMPEL=50;
-        const ratiosGekwalificeerd=ratios.filter(r=>r.aantalIngevuld>=DREMPEL);
-
-        // Gemiddelden over alle gekwalificeerde deelnemers
-        const avgToto=ratiosGekwalificeerd.length>0
-          ? Math.round(ratiosGekwalificeerd.reduce((s,r)=>s+r.totoOk/r.total,0)/ratiosGekwalificeerd.length*100)
-          : null;
-        const avgExact=ratiosGekwalificeerd.length>0
-          ? Math.round(ratiosGekwalificeerd.reduce((s,r)=>s+r.exactOk/r.total,0)/ratiosGekwalificeerd.length*100)
-          : null;
+        // ── Ratio groep toto & exact — hergebruikt berekenPouleGemiddelden,
+        // zodat homepage en Louis-verslag altijd hetzelfde gemiddelde tonen ──
+        const {ratiosGekwalificeerd,koRatios,DREMPEL,avgGroepToto:avgToto,avgGroepExact:avgExact,avgKoToto,avgKoExact,koTotaalIngevuld}=berekenPouleGemiddelden(ctx);
 
         const top3toto=[...ratiosGekwalificeerd].sort((a,b)=>(b.totoOk/b.total)-(a.totoOk/a.total)||b.totoOk-a.totoOk).slice(0,3);
         const top3exact=[...ratiosGekwalificeerd].sort((a,b)=>(b.exactOk/b.total)-(a.exactOk/a.total)||b.exactOk-a.exactOk).slice(0,3);
 
-        // KO-ratio's: zelfde idee, maar over de gespeelde KO-wedstrijden.
-        // Geen vaste drempel (KO-wedstrijden groeien gaandeweg) — meedoen vanaf
-        // 1 gespeelde KO-wedstrijd waarvoor de deelnemer een voorspelling had.
-        const gespeeldeKO=(ctx.koMatches||[]).filter(m=>m.home_goals!==null&&m.home_goals!==undefined&&m.home_team&&m.away_team);
-        const koRatios=ctx.participants.map(p=>{
-          const kpred=ctx.koPredictions[p.id]||{};
-          let totoOk=0,exactOk=0,total=0;
-          gespeeldeKO.forEach(m=>{
-            const pp=kpred[m.id];
-            if(!pp||pp.home===undefined||pp.home===null||pp.away===undefined||pp.away===null) return;
-            total++;
-            const ex=parseInt(pp.home)===parseInt(m.home_goals)&&parseInt(pp.away)===parseInt(m.away_goals);
-            const to=calcToto(pp.home,pp.away)===calcToto(m.home_goals,m.away_goals);
-            if(ex){totoOk++;exactOk++;}else if(to){totoOk++;}
-          });
-          return{name:`${p.first_name} ${p.last_name}`,participant:p,totoOk,exactOk,total};
-        }).filter(r=>r.total>0);
         const top3koToto=[...koRatios].sort((a,b)=>(b.totoOk/b.total)-(a.totoOk/a.total)||b.totoOk-a.totoOk).slice(0,3);
         const top3koExact=[...koRatios].sort((a,b)=>(b.exactOk/b.total)-(a.exactOk/a.total)||b.exactOk-a.exactOk).slice(0,3);
-
-        // KO-gemiddelde: CUMULATIEF (niet per-deelnemer-percentage middelen zoals
-        // bij de groepsfase) — alle correcte voorspellingen van alle deelnemers
-        // bij elkaar opgeteld, gedeeld door alle ingevulde voorspellingen samen.
-        // Bij de kleine aantallen van de KO-fase weegt zo iemand met 15 ingevulde
-        // KO-voorspellingen zwaarder mee dan iemand met maar 2 — bewust anders dan
-        // de groepsfase, waar elke gekwalificeerde deelnemer even zwaar meetelt.
-        const koTotaalIngevuld=koRatios.reduce((s,r)=>s+r.total,0);
-        const avgKoToto=koTotaalIngevuld>0
-          ? Math.round(koRatios.reduce((s,r)=>s+r.totoOk,0)/koTotaalIngevuld*100)
-          : null;
-        const avgKoExact=koTotaalIngevuld>0
-          ? Math.round(koRatios.reduce((s,r)=>s+r.exactOk,0)/koTotaalIngevuld*100)
-          : null;
 
         const hasAny=top3stijgers.length>0||top3dalers.length>0||top3toto.length>0||top3exact.length>0;
         if(!hasAny) return null;

@@ -2491,6 +2491,20 @@ function HomeView({setView,ctx}){
         const top3koToto=[...koRatios].sort((a,b)=>(b.totoOk/b.total)-(a.totoOk/a.total)||b.totoOk-a.totoOk).slice(0,3);
         const top3koExact=[...koRatios].sort((a,b)=>(b.exactOk/b.total)-(a.exactOk/a.total)||b.exactOk-a.exactOk).slice(0,3);
 
+        // KO-gemiddelde: CUMULATIEF (niet per-deelnemer-percentage middelen zoals
+        // bij de groepsfase) — alle correcte voorspellingen van alle deelnemers
+        // bij elkaar opgeteld, gedeeld door alle ingevulde voorspellingen samen.
+        // Bij de kleine aantallen van de KO-fase weegt zo iemand met 15 ingevulde
+        // KO-voorspellingen zwaarder mee dan iemand met maar 2 — bewust anders dan
+        // de groepsfase, waar elke gekwalificeerde deelnemer even zwaar meetelt.
+        const koTotaalIngevuld=koRatios.reduce((s,r)=>s+r.total,0);
+        const avgKoToto=koTotaalIngevuld>0
+          ? Math.round(koRatios.reduce((s,r)=>s+r.totoOk,0)/koTotaalIngevuld*100)
+          : null;
+        const avgKoExact=koTotaalIngevuld>0
+          ? Math.round(koRatios.reduce((s,r)=>s+r.exactOk,0)/koTotaalIngevuld*100)
+          : null;
+
         const hasAny=top3stijgers.length>0||top3dalers.length>0||top3toto.length>0||top3exact.length>0;
         if(!hasAny) return null;
 
@@ -2617,6 +2631,12 @@ function HomeView({setView,ctx}){
                           </div>
                         );
                       })}
+                      {avgKoToto!==null&&(
+                        <div style={{marginTop:8,paddingTop:6,borderTop:`1px dashed ${C.border}`,display:"flex",justifyContent:"space-between",fontSize:11,color:C.gray}}>
+                          <span>Gemiddelde ({koRatios.length} deeln., {koTotaalIngevuld} voorspellingen)</span>
+                          <span style={{fontWeight:700,color:C.gray}}>{avgKoToto}%</span>
+                        </div>
+                      )}
                     </div>
                   )}
                   {/* KO exact ratio — alleen tonen als er KO-wedstrijden gespeeld zijn */}
@@ -2634,6 +2654,12 @@ function HomeView({setView,ctx}){
                           </div>
                         );
                       })}
+                      {avgKoExact!==null&&(
+                        <div style={{marginTop:8,paddingTop:6,borderTop:`1px dashed ${C.border}`,display:"flex",justifyContent:"space-between",fontSize:11,color:C.gray}}>
+                          <span>Gemiddelde ({koRatios.length} deeln., {koTotaalIngevuld} voorspellingen)</span>
+                          <span style={{fontWeight:700,color:C.gray}}>{avgKoExact}%</span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

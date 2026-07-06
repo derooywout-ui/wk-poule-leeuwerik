@@ -474,12 +474,14 @@ function berekenAnalyseFeiten(deelnemer, ctx){
   }
 
   // ── Concurrent: meest gelijkend ranking-verloop (kleinste gemiddelde afstand) ──
+  // perBatch is chronologisch te sorteren op created_at (ISO-string, dus string-sort=tijd-sort).
   const perBatch={};
   ctx.rankingSnapshot.forEach(r=>{
     if((r.matches_played??0)<=0) return;
     if(!perBatch[r.created_at]) perBatch[r.created_at]={};
     perBatch[r.created_at][r.participant_id]=r.rank;
   });
+  const batchTijden=Object.keys(perBatch).sort();
   let concurrent=null,kleinsteAfstand=Infinity;
   ctx.participants.forEach(q=>{
     if(q.id===uid) return;
@@ -489,6 +491,43 @@ function berekenAnalyseFeiten(deelnemer, ctx){
     });
     if(n>=5){const gem=som/n;if(gem<kleinsteAfstand){kleinsteAfstand=gem;concurrent=q;}}
   });
+  // ── Concurrent-verloop door het toernooi heen: niet alleen het gemiddelde
+  // verschil, maar ook hoe vaak van plek gewisseld werd, de grootste voor-
+  // en achterstand ooit, en of het gat richting het einde groter of kleiner
+  // werd (laatste 20% van de snapshots vs. het volledige gemiddelde). Alles
+  // afgeleid uit dezelfde perBatch-tijdreeks, geen nieuwe databron nodig.
+  let concurrentVerloop=null;
+  if(concurrent){
+    let vorigTeken=0, keerGewisseld=0, grootsteVoorsprong=0, grootsteAchterstand=0;
+    const verschillen=[];
+    batchTijden.forEach(t=>{
+      const batch=perBatch[t];
+      if(batch[uid]===undefined||batch[concurrent.id]===undefined) return;
+      const verschil=batch[concurrent.id]-batch[uid]; // positief = uid staat beter (lager rank getal)
+      verschillen.push(verschil);
+      const teken=verschil>0?1:verschil<0?-1:0;
+      if(teken!==0){
+        if(vorigTeken!==0&&teken!==vorigTeken) keerGewisseld++;
+        vorigTeken=teken;
+      }
+      if(verschil>grootsteVoorsprong) grootsteVoorsprong=verschil;
+      if(-verschil>grootsteAchterstand) grootsteAchterstand=-verschil;
+    });
+    if(verschillen.length>=5){
+      const laatste20pct=Math.max(1,Math.round(verschillen.length*0.2));
+      const slotFase=verschillen.slice(-laatste20pct);
+      const gemSlot=slotFase.reduce((s,v)=>s+Math.abs(v),0)/slotFase.length;
+      const gemTotaal=verschillen.reduce((s,v)=>s+Math.abs(v),0)/verschillen.length;
+      // Alleen als betekenisvol anders (>0.5 plek verschil) — anders "vlak" laten en weglaten
+      const richting=Math.abs(gemSlot-gemTotaal)<=0.5?null:(gemSlot<gemTotaal?"kleiner_richting_einde":"groter_richting_einde");
+      concurrentVerloop={
+        keer_gewisseld:keerGewisseld,
+        grootste_voorsprong_op_concurrent:grootsteVoorsprong,
+        grootste_achterstand_op_concurrent:grootsteAchterstand,
+        richting_einde:richting,
+      };
+    }
+  }
 
   // ── Koploper/winnaar (voor perspectief naast de concurrent) + bonusgemiddelde ──
   // Zelfde puntenformule als het klassement, over alle deelnemers heen — zowel om
@@ -528,10 +567,26 @@ function berekenAnalyseFeiten(deelnemer, ctx){
     if(qTotaal>hoogsteTotaal){hoogsteTotaal=qTotaal;koploper=q;}
   });
   const totaal=gToto+gExact+gDoorstoot+koToto+koExact+bonus;
+
+  // ── Geluk/pech: hergebruikt berekenGelukPech (zelfde bron als het homepage-
+  // blok "Lucky bastards & Pechvogels"), zodat het verslag nooit iets anders
+  // beweert dan wat er publiek op de site staat. Hier vóór winnaarFeit berekend
+  // zodat we ook het geluk/pech-saldo van de winnaar erin kunnen meegeven —
+  // nodig om het puntverschil met de winnaar in perspectief te zetten (zie
+  // ANALYSE_PROMPT: "was het gat vooral geluk, of zat er meer achter?").
+  const gelukPechAlles=berekenGelukPech(ctx);
+  const gelukPechVan=(id)=>{
+    const r=gelukPechAlles.resultaten.find(x=>x.deelnemer.id===id);
+    return (r&&(r.geluk>0||r.pech>0))?{
+      aantal_geluk:r.geluk, aantal_pech:r.pech, saldo:r.saldo, punten_saldo_minimaal:r.puntenSaldo,
+    }:null;
+  };
+
   const winnaarFeit=(koploper&&koploper.id!==uid)?{
     naam:`${koploper.first_name} ${koploper.last_name}`,
     punten:hoogsteTotaal,
     verschil:hoogsteTotaal-totaal,
+    geluk_pech:gelukPechVan(koploper.id),
   }:null;
 
   // ── Poulegemiddelden: gedeelde functie, zelfde cijfers als de homepage ──
@@ -582,18 +637,10 @@ function berekenAnalyseFeiten(deelnemer, ctx){
     }
   }
 
-  // ── Geluk/pech: hergebruikt berekenGelukPech (zelfde bron als het homepage-
-  // blok "Lucky bastards & Pechvogels"), zodat het verslag nooit iets anders
-  // beweert dan wat er publiek op de site staat. Weglaten als er niks gebeurde
+  // Eigen geluk/pech-feit: zelfde gelukPechAlles als hierboven (al berekend
+  // vóór winnaarFeit), via de gedeelde helper — weglaten als er niks gebeurde
   // (geen enkele gekantelde wedstrijd geraakt) — dan is er niks te vertellen.
-  const gelukPechAlles=berekenGelukPech(ctx);
-  const eigenGelukPech=gelukPechAlles.resultaten.find(r=>r.deelnemer.id===uid);
-  const gelukPechFeit=(eigenGelukPech&&(eigenGelukPech.geluk>0||eigenGelukPech.pech>0))?{
-    aantal_geluk:eigenGelukPech.geluk,
-    aantal_pech:eigenGelukPech.pech,
-    saldo:eigenGelukPech.saldo,
-    punten_saldo_minimaal:eigenGelukPech.puntenSaldo,
-  }:null;
+  const gelukPechFeit=gelukPechVan(uid);
 
   return {
     naam:`${deelnemer.first_name} ${deelnemer.last_name}`,
@@ -611,7 +658,11 @@ function berekenAnalyseFeiten(deelnemer, ctx){
     // cijfers als het "Opvallend"-blok op de homepage. Vergelijk dus altijd
     // groepsfase-percentage met groepsfase-gemiddelde, KO met KO — nooit kruislings.
     poule_gemiddelde:{groepsfase_toto_pct:avgGroepToto, groepsfase_exact_pct:avgGroepExact, ko_toto_pct:avgKoToto, ko_exact_pct:avgKoExact, bonuspunten:nDeel?Math.round(somBonus/nDeel):null},
-    concurrent:concurrent?{naam:`${concurrent.first_name} ${concurrent.last_name}`, gemiddeld_posities_verschil:Math.round(kleinsteAfstand*10)/10}:null,
+    concurrent:concurrent?{
+      naam:`${concurrent.first_name} ${concurrent.last_name}`,
+      gemiddeld_posities_verschil:Math.round(kleinsteAfstand*10)/10,
+      ...(concurrentVerloop||{}),
+    }:null,
     winnaar:winnaarFeit,
     wereldkampioen:kampioenFeit,
     geluk_pech:gelukPechFeit,

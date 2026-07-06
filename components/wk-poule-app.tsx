@@ -2309,7 +2309,7 @@ function HomeView({setView,ctx}){
       {(()=>{
         // Hergebruik dezelfde score-logica als StandingsView (incl. juiste puntensysteem)
         function calcScoreHome(uid){
-          let gToto=0,gExact=0,gDoorstoot=0,koToto=0,koExact=0,bonus=0,gTotoCount=0,gExactCount=0;
+          let gToto=0,gExact=0,gDoorstoot=0,koToto=0,koExact=0,bonus=0,gTotoCount=0,gExactCount=0,koTotoCount=0,koExactCount=0;
           const pred=ctx.predictions[uid]||{};
           const koPred=ctx.koPredictions[uid]||{};
           Object.entries(ctx.matchResults).forEach(([mid,result])=>{
@@ -2333,26 +2333,29 @@ function HomeView({setView,ctx}){
             if(!p||p.home===undefined||p.home===null) return;
             const exactOk=parseInt(p.home)===parseInt(match.home_goals)&&parseInt(p.away)===parseInt(match.away_goals);
             const totoOk=calcToto(p.home,p.away)===calcToto(match.home_goals,match.away_goals);
-            if(exactOk){koToto+=KO_TOTO_PTS;koExact+=(KO_EXACT_PTS-KO_TOTO_PTS);}
-            else if(totoOk){koToto+=KO_TOTO_PTS;}
+            if(exactOk){koToto+=KO_TOTO_PTS;koExact+=(KO_EXACT_PTS-KO_TOTO_PTS);koTotoCount++;koExactCount++;}
+            else if(totoOk){koToto+=KO_TOTO_PTS;koTotoCount++;}
           });
           Object.entries(ctx.bonusScores[uid]||{}).forEach(([qi,v])=>{
             if(v){const q=ctx.bonusQuestions.find(bq=>String(bq.idx)===String(qi));bonus+=(q?.points??20);}
           });
           const total=gToto+gExact+gDoorstoot+koToto+koExact+bonus;
-          return{total,gTotoCount,gExactCount,bonus};
+          // Tiebreaker-aantallen: poulefase + finalefase SAMEN (zie Help §8)
+          const totoCountCombined=gTotoCount+koTotoCount;
+          const exactCountCombined=gExactCount+koExactCount;
+          return{total,gTotoCount,gExactCount,koTotoCount,koExactCount,totoCountCombined,exactCountCombined,bonus};
         }
         const allHome=ctx.participants.map(p=>({...p,...calcScoreHome(p.id)}));
         allHome.sort((a,b)=>{
           if(b.total!==a.total) return b.total-a.total;
-          if(b.gTotoCount!==a.gTotoCount) return b.gTotoCount-a.gTotoCount;
-          if(b.gExactCount!==a.gExactCount) return b.gExactCount-a.gExactCount;
+          if(b.totoCountCombined!==a.totoCountCombined) return b.totoCountCombined-a.totoCountCombined;
+          if(b.exactCountCombined!==a.exactCountCombined) return b.exactCountCombined-a.exactCountCombined;
           if(b.bonus!==a.bonus) return b.bonus-a.bonus;
           return 0;
         });
         const rankedHome=allHome.reduce((acc,p,i)=>{
           const prev=acc[i-1];
-          const gelijk=prev&&p.total===prev.total&&p.gTotoCount===prev.gTotoCount&&p.gExactCount===prev.gExactCount&&p.bonus===prev.bonus;
+          const gelijk=prev&&p.total===prev.total&&p.totoCountCombined===prev.totoCountCombined&&p.exactCountCombined===prev.exactCountCombined&&p.bonus===prev.bonus;
           const rang=i===0?1:gelijk?prev.rang:i+1;
           acc.push({...p,rang});
           return acc;
@@ -4481,7 +4484,7 @@ function StandingsView({ctx}){
     // koToto  = KO_TOTO_PTS per KO-wedstrijd met juiste toto (incl. exact)
     // koExact = (KO_EXACT_PTS - KO_TOTO_PTS) extra per exacte KO-uitslag
     let gToto=0,gExact=0,gDoorstoot=0,koToto=0,koExact=0,bonus=0;
-    let gTotoCount=0,gExactCount=0; // voor tiebreaker
+    let gTotoCount=0,gExactCount=0,koTotoCount=0,koExactCount=0; // voor tiebreaker (poule+finale samen, zie Help §8)
     const pred=ctx.predictions[uid]||{};
     const koPred=ctx.koPredictions[uid]||{};
 
@@ -4519,8 +4522,8 @@ function StandingsView({ctx}){
       if(!p||p.home===undefined||p.home===null) return;
       const exactOk=parseInt(p.home)===parseInt(match.home_goals)&&parseInt(p.away)===parseInt(match.away_goals);
       const totoOk=calcToto(p.home,p.away)===calcToto(match.home_goals,match.away_goals);
-      if(exactOk){koToto+=KO_TOTO_PTS;koExact+=(KO_EXACT_PTS-KO_TOTO_PTS);}
-      else if(totoOk){koToto+=KO_TOTO_PTS;}
+      if(exactOk){koToto+=KO_TOTO_PTS;koExact+=(KO_EXACT_PTS-KO_TOTO_PTS);koTotoCount++;koExactCount++;}
+      else if(totoOk){koToto+=KO_TOTO_PTS;koTotoCount++;}
     });
 
     // Bonus punten — alleen als toggle aan staat
@@ -4533,22 +4536,25 @@ function StandingsView({ctx}){
       });
     }
     const total=gToto+gExact+gDoorstoot+koToto+koExact+bonus;
-    return{gToto,gExact,gDoorstoot,koToto,koExact,bonus,total,gTotoCount,gExactCount};
+    // Tiebreaker-aantallen: poulefase + finalefase SAMEN (zie Help §8, stap 2 en 3)
+    const totoCountCombined=gTotoCount+koTotoCount;
+    const exactCountCombined=gExactCount+koExactCount;
+    return{gToto,gExact,gDoorstoot,koToto,koExact,bonus,total,gTotoCount,gExactCount,koTotoCount,koExactCount,totoCountCombined,exactCountCombined};
   }
 
   // Sorteer: totaal desc → toto-count desc → exact-count desc
   const rawRows=ctx.participants.map(p=>({...p,...calcScore(p.id)}));
   rawRows.sort((a,b)=>{
     if(b.total!==a.total) return b.total-a.total;
-    if(b.gTotoCount!==a.gTotoCount) return b.gTotoCount-a.gTotoCount;
-    if(b.gExactCount!==a.gExactCount) return b.gExactCount-a.gExactCount;
+    if(b.totoCountCombined!==a.totoCountCombined) return b.totoCountCombined-a.totoCountCombined;
+    if(b.exactCountCombined!==a.exactCountCombined) return b.exactCountCombined-a.exactCountCombined;
     if(b.bonus!==a.bonus) return b.bonus-a.bonus;
     return 0; // Volledig gelijk = gedeelde positie
   });
   // Ken rangnummers toe (gelijke stand = zelfde rang)
   const rows=rawRows.reduce((acc,p,i)=>{
     const prev=acc[i-1];
-    const gelijk=prev&&p.total===prev.total&&p.gTotoCount===prev.gTotoCount&&p.gExactCount===prev.gExactCount&&p.bonus===prev.bonus;
+    const gelijk=prev&&p.total===prev.total&&p.totoCountCombined===prev.totoCountCombined&&p.exactCountCombined===prev.exactCountCombined&&p.bonus===prev.bonus;
     const rang=i===0?1:gelijk?prev.rang:i+1;
     acc.push({...p,rang});
     return acc;

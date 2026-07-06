@@ -387,7 +387,22 @@ function berekenPouleGemiddelden(ctx){
   });
   const avgBonus=ctx.participants.length>0?Math.round(somBonusAlle/ctx.participants.length):null;
 
-  return {ratiosGekwalificeerd,koRatios,DREMPEL,avgGroepToto,avgGroepExact,avgKoToto,avgKoExact,koTotaalIngevuld,avgDoorstoot,avgBonus};
+  // Bonus-gemiddelde als PERCENTAGE (aantal vragen goed beoordeeld / totaal
+  // vragen) — een andere eenheid dan avgBonus hierboven (dat zijn ruwe,
+  // punten-gewogen bonuspunten, gebruikt in de AI-feiten). Deze pct-versie is
+  // voor het Louis-schema-tabelletje, waar alle rijen in percentages staan.
+  const totaalBonusVragen=(ctx.bonusQuestions||[]).length;
+  let avgBonusPct=null;
+  if(totaalBonusVragen>0){
+    const bonusPcts=ctx.participants.map(p=>{
+      let goed=0;
+      Object.values(ctx.bonusScores[p.id]||{}).forEach(v=>{ if(v===true) goed++; });
+      return goed/totaalBonusVragen;
+    });
+    avgBonusPct=Math.round(bonusPcts.reduce((s,v)=>s+v,0)/bonusPcts.length*100);
+  }
+
+  return {ratiosGekwalificeerd,koRatios,DREMPEL,avgGroepToto,avgGroepExact,avgKoToto,avgKoExact,koTotaalIngevuld,avgDoorstoot,avgBonus,avgBonusPct};
 }
 
 function berekenGelukPech(ctx){
@@ -422,6 +437,46 @@ function berekenGelukPech(ctx){
     };
   });
   return {resultaten, aantalGekanteldeWedstrijden:gekantelde.length};
+}
+
+// Eén bron van waarheid voor "wat heeft elke deelnemer per onderdeel gescoord",
+// gebruikt door zowel de koploper/winnaar-detectie in berekenAnalyseFeiten als
+// het Louis-schema-tabelletje (berekenLouisSchema) — zodat winnaar-cijfers in
+// de tabel altijd exact overeenkomen met de winnaar die Louis in de tekst noemt.
+function berekenAllePuntenTotalen(ctx){
+  return ctx.participants.map(q=>{
+    const qp=ctx.predictions[q.id]||{};const qk=ctx.koPredictions[q.id]||{};
+    let qGToto=0,qGExact=0,qGDoorstoot=0,qKoToto=0,qKoExact=0,qBonus=0;
+    let totoGroep=0,exactGroep=0,totoKO=0,exactKO=0,doorstootGoed=0,bonusGoed=0;
+    Object.entries(ctx.matchResults).forEach(([mid,r])=>{
+      if(r.home===null||r.home===undefined)return;
+      const pp=qp[mid];if(!pp||pp.home===undefined||pp.home==="")return;
+      const ex=parseInt(pp.home)===parseInt(r.home)&&parseInt(pp.away)===parseInt(r.away);
+      const to=calcToto(pp.home,pp.away)===calcToto(r.home,r.away);
+      if(ex){qGToto+=3;qGExact+=2;totoGroep++;exactGroep++;}else if(to){qGToto+=3;totoGroep++;}
+    });
+    const qPredAdv=calcDoorstootFromPredictions(qp);
+    if(ctx.doorstootLanden&&ctx.doorstootLanden.length>0){
+      qPredAdv.forEach(t=>{
+        const enNaam=NL_TO_EN_ALIAS[t]||t.toLowerCase();
+        if(ctx.doorstootLanden.includes(enNaam)){qGDoorstoot+=DOORSTOOT_PTS;doorstootGoed++;}
+      });
+    }
+    ctx.koMatches.forEach(m=>{
+      if(!m.home_team||m.home_goals===null||m.home_goals===undefined)return;
+      const pp=qk[m.id];if(!pp||pp.home===null||pp.home===undefined)return;
+      const ex=parseInt(pp.home)===parseInt(m.home_goals)&&parseInt(pp.away)===parseInt(m.away_goals);
+      const to=calcToto(pp.home,pp.away)===calcToto(m.home_goals,m.away_goals);
+      if(ex){qKoToto+=KO_TOTO_PTS;qKoExact+=(KO_EXACT_PTS-KO_TOTO_PTS);totoKO++;exactKO++;}else if(to){qKoToto+=KO_TOTO_PTS;totoKO++;}
+    });
+    Object.entries(ctx.bonusScores[q.id]||{}).forEach(([qi,v])=>{
+      if(v){const qq=ctx.bonusQuestions.find(bq=>String(bq.idx)===String(qi));qBonus+=(qq?.points??20);}
+      if(v===true) bonusGoed++;
+    });
+    const qTotaal=qGToto+qGExact+qGDoorstoot+qKoToto+qKoExact+qBonus;
+    return {participant:q, qGToto,qGExact,qGDoorstoot,qKoToto,qKoExact,qBonus,qTotaal,
+      totoGroep,exactGroep,totoKO,exactKO,doorstootGoed,bonusGoed};
+  });
 }
 
 function berekenAnalyseFeiten(deelnemer, ctx){
@@ -559,41 +614,12 @@ function berekenAnalyseFeiten(deelnemer, ctx){
   }
 
   // ── Koploper/winnaar (voor perspectief naast de concurrent) ──
-  // Zelfde puntenformule als het klassement, over alle deelnemers heen, om de
-  // huidige koploper te vinden (bij afronding na de finale: de daadwerkelijke
-  // winnaar). Het bonusgemiddelde zelf komt nu uit berekenPouleGemiddelden
-  // (avgBonus) — één bron van waarheid in plaats van een losse lokale som.
+  // Gebruikt de gedeelde berekenAllePuntenTotalen (zelfde bron als het Louis-
+  // schema-tabelletje) om de huidige koploper te vinden (bij afronding na de
+  // finale: de daadwerkelijke winnaar).
+  const alleTotalen=berekenAllePuntenTotalen(ctx);
   let koploper=null,hoogsteTotaal=-Infinity;
-  ctx.participants.forEach(q=>{
-    const qp=ctx.predictions[q.id]||{};const qk=ctx.koPredictions[q.id]||{};
-    let qGToto=0,qGExact=0,qGDoorstoot=0,qKoToto=0,qKoExact=0,qBonus=0;
-    Object.entries(ctx.matchResults).forEach(([mid,r])=>{
-      if(r.home===null||r.home===undefined)return;
-      const pp=qp[mid];if(!pp||pp.home===undefined||pp.home==="")return;
-      const ex=parseInt(pp.home)===parseInt(r.home)&&parseInt(pp.away)===parseInt(r.away);
-      const to=calcToto(pp.home,pp.away)===calcToto(r.home,r.away);
-      if(ex){qGToto+=3;qGExact+=2;}else if(to){qGToto+=3;}
-    });
-    const qPredAdv=calcDoorstootFromPredictions(qp);
-    if(ctx.doorstootLanden&&ctx.doorstootLanden.length>0){
-      qPredAdv.forEach(t=>{
-        const enNaam=NL_TO_EN_ALIAS[t]||t.toLowerCase();
-        if(ctx.doorstootLanden.includes(enNaam)) qGDoorstoot+=DOORSTOOT_PTS;
-      });
-    }
-    ctx.koMatches.forEach(m=>{
-      if(!m.home_team||m.home_goals===null||m.home_goals===undefined)return;
-      const pp=qk[m.id];if(!pp||pp.home===null||pp.home===undefined)return;
-      const ex=parseInt(pp.home)===parseInt(m.home_goals)&&parseInt(pp.away)===parseInt(m.away_goals);
-      const to=calcToto(pp.home,pp.away)===calcToto(m.home_goals,m.away_goals);
-      if(ex){qKoToto+=KO_TOTO_PTS;qKoExact+=(KO_EXACT_PTS-KO_TOTO_PTS);}else if(to){qKoToto+=KO_TOTO_PTS;}
-    });
-    Object.entries(ctx.bonusScores[q.id]||{}).forEach(([qi,v])=>{
-      if(v){const qq=ctx.bonusQuestions.find(bq=>String(bq.idx)===String(qi));qBonus+=(qq?.points??20);}
-    });
-    const qTotaal=qGToto+qGExact+qGDoorstoot+qKoToto+qKoExact+qBonus;
-    if(qTotaal>hoogsteTotaal){hoogsteTotaal=qTotaal;koploper=q;}
-  });
+  alleTotalen.forEach(t=>{ if(t.qTotaal>hoogsteTotaal){hoogsteTotaal=t.qTotaal;koploper=t.participant;} });
   const totaal=gToto+gExact+gDoorstoot+koToto+koExact+bonus;
 
   // ── Geluk/pech: hergebruikt berekenGelukPech (zelfde bron als het homepage-
@@ -720,6 +746,55 @@ function berekenAnalyseFeiten(deelnemer, ctx){
     wereldkampioen:kampioenFeit,
     geluk_pech:gelukPechFeit,
   };
+}
+
+// ── Louis-schema: het tabelletje "Mijn score / Gemiddelde score / Winnaar's
+// score" per onderdeel, getoond onder het verslag van Louis. Puur UI — geen
+// AI bij betrokken, dus 100% consistent met de rest van de site. Alles in
+// percentages (op verzoek), behalve de laatste rij (geluk/pech, dat is een
+// saldo/aantal, geen percentage). Hergebruikt bestaande gedeelde functies
+// (berekenAllePuntenTotalen, berekenPouleGemiddelden, berekenGelukPech) zodat
+// de winnaar hier altijd exact dezelfde is als in "De analyse van Louis".
+function berekenLouisSchema(deelnemer, ctx){
+  const uid=deelnemer.id;
+  const alleTotalen=berekenAllePuntenTotalen(ctx);
+  const zelf=alleTotalen.find(t=>t.participant.id===uid);
+  let koploperEntry=null,hoogsteTotaal=-Infinity;
+  alleTotalen.forEach(t=>{ if(t.qTotaal>hoogsteTotaal){hoogsteTotaal=t.qTotaal;koploperEntry=t;} });
+  if(!zelf||!koploperEntry) return null;
+
+  const gespeeldGroep=Object.values(ctx.matchResults).filter(r=>r&&r.home!==null&&r.home!==undefined).length;
+  const gespeeldKO=(ctx.koMatches||[]).filter(m=>m.home_goals!==null&&m.home_goals!==undefined&&m.home_team&&m.away_team).length;
+  const maxDoorstoot=(ctx.koMatches||[]).filter(m=>m.round_id==="r16").length*2;
+  const totaalBonusVragen=(ctx.bonusQuestions||[]).length;
+
+  const {avgGroepToto,avgGroepExact,avgKoToto,avgKoExact,avgDoorstoot,avgBonusPct}=berekenPouleGemiddelden(ctx);
+  const pct=(n,d)=>d>0?Math.round(n/d*100):null;
+
+  const rijen=[
+    {onderdeel:"Groep toto", zelf_pct:pct(zelf.totoGroep,gespeeldGroep), gemiddelde_pct:avgGroepToto, winnaar_pct:pct(koploperEntry.totoGroep,gespeeldGroep)},
+    {onderdeel:"Groep exact", zelf_pct:pct(zelf.exactGroep,gespeeldGroep), gemiddelde_pct:avgGroepExact, winnaar_pct:pct(koploperEntry.exactGroep,gespeeldGroep)},
+    {onderdeel:"Doorstoot", zelf_pct:pct(zelf.doorstootGoed,maxDoorstoot), gemiddelde_pct:avgDoorstoot, winnaar_pct:pct(koploperEntry.doorstootGoed,maxDoorstoot)},
+    {onderdeel:"KO toto", zelf_pct:pct(zelf.totoKO,gespeeldKO), gemiddelde_pct:avgKoToto, winnaar_pct:pct(koploperEntry.totoKO,gespeeldKO)},
+    {onderdeel:"KO exact", zelf_pct:pct(zelf.exactKO,gespeeldKO), gemiddelde_pct:avgKoExact, winnaar_pct:pct(koploperEntry.exactKO,gespeeldKO)},
+    {onderdeel:"Bonusvragen", zelf_pct:pct(zelf.bonusGoed,totaalBonusVragen), gemiddelde_pct:avgBonusPct, winnaar_pct:pct(koploperEntry.bonusGoed,totaalBonusVragen)},
+  ];
+
+  // Geluk/pech: geen poulegemiddelde (zie gesprek met Wout — een saldo dat voor
+  // de helft van de poule positief en voor de andere helft negatief uitpakt
+  // zegt als gemiddelde weinig). Wel de ratio van de winnaar, plus tussen
+  // haakjes het totale puntenverschil van de deelnemer t.o.v. de winnaar.
+  const gelukPechAlles=berekenGelukPech(ctx);
+  const saldoVan=(id)=>{const r=gelukPechAlles.resultaten.find(x=>x.deelnemer.id===id);return r?r.saldo:0;};
+  const fmtSaldo=(s)=>s>0?`+${s}`:`${s}`;
+  const geluk_pech={
+    onderdeel:"Geluk/pech ratio",
+    zelf_ratio:fmtSaldo(saldoVan(uid)),
+    winnaar_ratio:fmtSaldo(saldoVan(koploperEntry.participant.id)),
+    verschil_punten:zelf.qTotaal-koploperEntry.qTotaal, // ≤0 tenzij deelnemer zelf koploper is
+  };
+
+  return {rijen, geluk_pech};
 }
 
 const S={
@@ -3921,6 +3996,10 @@ function DeelnemerOverlay({p, ctx, onClose}){
     })();
     return()=>{actief=false;};
   },[p.id]);
+  // Alleen berekenen als het popup ook echt getoond wordt (63 deelnemers x alle
+  // wedstrijden is geen zware berekening, maar hoeft niet bij elke render van
+  // de overlay zelf — pas zodra iemand daadwerkelijk op de Louis-knop drukt).
+  const louisSchema = toonLouis ? berekenLouisSchema(p, ctx) : null;
   const pred = ctx.predictions[p.id]||{};
   const koPred = ctx.koPredictions[p.id]||{};
   const bonusA = ctx.bonusAnswers[p.id]||{};
@@ -4466,6 +4545,40 @@ function DeelnemerOverlay({p, ctx, onClose}){
             <div style={{padding:"22px",fontSize:14,lineHeight:1.7,color:C.dark,whiteSpace:"pre-line"}}>
               {louisVerslag}
             </div>
+            {louisSchema&&(
+              <div style={{padding:"0 22px 22px"}}>
+                <div style={{fontSize:11,fontWeight:800,color:C.green,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>
+                  Onderdeel in cijfers
+                </div>
+                <div style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1.3fr 1fr 1fr 1fr",background:"#f0faf6",borderBottom:`1px solid ${C.border}`}}>
+                    {["Onderdeel","Jouw score","Gemiddelde","Winnaar"].map((h,i)=>(
+                      <div key={i} style={{padding:"8px 10px",fontSize:11,fontWeight:800,color:C.green,textTransform:"uppercase",letterSpacing:0.3}}>{h}</div>
+                    ))}
+                  </div>
+                  {louisSchema.rijen.map((r,i)=>(
+                    <div key={r.onderdeel} style={{display:"grid",gridTemplateColumns:"1.3fr 1fr 1fr 1fr",borderBottom:i<louisSchema.rijen.length-1?`1px solid ${C.border}`:"none"}}>
+                      <div style={{padding:"8px 10px",fontSize:13,fontWeight:600}}>{r.onderdeel}</div>
+                      <div style={{padding:"8px 10px",fontSize:13,fontWeight:700}}>{r.zelf_pct!==null?`${r.zelf_pct}%`:"—"}</div>
+                      <div style={{padding:"8px 10px",fontSize:13,color:"#666"}}>{r.gemiddelde_pct!==null?`${r.gemiddelde_pct}%`:"—"}</div>
+                      <div style={{padding:"8px 10px",fontSize:13,color:"#666"}}>{r.winnaar_pct!==null?`${r.winnaar_pct}%`:"—"}</div>
+                    </div>
+                  ))}
+                  {/* Geluk/pech: eigen rijopmaak, geen poulegemiddelde (zie tooltip elders in
+                      de app — een saldo is voor de helft van de poule positief en voor de
+                      andere helft negatief, dus een gemiddelde zegt hier weinig). */}
+                  <div style={{display:"grid",gridTemplateColumns:"1.3fr 1fr 1fr 1fr",borderTop:`1px solid ${C.border}`}}>
+                    <div style={{padding:"8px 10px",fontSize:13,fontWeight:600}}>{louisSchema.geluk_pech.onderdeel}</div>
+                    <div style={{padding:"8px 10px",fontSize:13,fontWeight:700}}>{louisSchema.geluk_pech.zelf_ratio}</div>
+                    <div style={{padding:"8px 10px",fontSize:13,color:"#bbb"}}>—</div>
+                    <div style={{padding:"8px 10px",fontSize:13,color:"#666"}}>
+                      {louisSchema.geluk_pech.winnaar_ratio}
+                      <span style={{fontSize:11,color:"#999"}}> ({louisSchema.geluk_pech.verschil_punten})</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

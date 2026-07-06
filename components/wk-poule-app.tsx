@@ -358,7 +358,36 @@ function berekenPouleGemiddelden(ctx){
     ? Math.round(koRatios.reduce((s,r)=>s+r.exactOk,0)/koTotaalIngevuld*100)
     : null;
 
-  return {ratiosGekwalificeerd,koRatios,DREMPEL,avgGroepToto,avgGroepExact,avgKoToto,avgKoExact,koTotaalIngevuld};
+  // Doorstoot-gemiddelde: percentage per deelnemer (landen goed / max), gemiddeld
+  // over alle deelnemers — nodig om "zwakste onderdeel" ook voor doorstoot te
+  // kunnen bepalen, naast de al bestaande toto/exact-gemiddelden hierboven.
+  const maxDoorstootAll=(ctx.koMatches||[]).filter(m=>m.round_id==="r16").length*2;
+  let avgDoorstoot=null;
+  if(maxDoorstootAll>0&&ctx.doorstootLanden&&ctx.doorstootLanden.length>0){
+    const doorstootPcts=ctx.participants.map(p=>{
+      const predAdv=calcDoorstootFromPredictions(ctx.predictions[p.id]||{});
+      let goed=0;
+      predAdv.forEach(t=>{
+        const enNaam=NL_TO_EN_ALIAS[t]||t.toLowerCase();
+        if(ctx.doorstootLanden.includes(enNaam)) goed++;
+      });
+      return goed/maxDoorstootAll;
+    });
+    avgDoorstoot=doorstootPcts.length>0?Math.round(doorstootPcts.reduce((s,v)=>s+v,0)/doorstootPcts.length*100):null;
+  }
+
+  // Bonus-gemiddelde: gemiddeld aantal bonuspunten per deelnemer (zelfde bron
+  // die eerder alleen lokaal in berekenAnalyseFeiten berekend werd — nu hier
+  // centraal, één bron van waarheid, geen dubbele/uiteenlopende berekening meer).
+  let somBonusAlle=0;
+  ctx.participants.forEach(p=>{
+    Object.entries(ctx.bonusScores[p.id]||{}).forEach(([qi,v])=>{
+      if(v){const q=ctx.bonusQuestions.find(bq=>String(bq.idx)===String(qi));somBonusAlle+=(q?.points??20);}
+    });
+  });
+  const avgBonus=ctx.participants.length>0?Math.round(somBonusAlle/ctx.participants.length):null;
+
+  return {ratiosGekwalificeerd,koRatios,DREMPEL,avgGroepToto,avgGroepExact,avgKoToto,avgKoExact,koTotaalIngevuld,avgDoorstoot,avgBonus};
 }
 
 function berekenGelukPech(ctx){
@@ -529,12 +558,12 @@ function berekenAnalyseFeiten(deelnemer, ctx){
     }
   }
 
-  // ── Koploper/winnaar (voor perspectief naast de concurrent) + bonusgemiddelde ──
-  // Zelfde puntenformule als het klassement, over alle deelnemers heen — zowel om
-  // de huidige koploper te vinden (bij afronding na de finale: de daadwerkelijke
-  // winnaar) als om het gemiddelde aantal bonuspunten te berekenen (dat zit niet
-  // in berekenPouleGemiddelden, want die gaat alleen over de toto/exact-ratio's).
-  let somBonus=0,nDeel=0,koploper=null,hoogsteTotaal=-Infinity;
+  // ── Koploper/winnaar (voor perspectief naast de concurrent) ──
+  // Zelfde puntenformule als het klassement, over alle deelnemers heen, om de
+  // huidige koploper te vinden (bij afronding na de finale: de daadwerkelijke
+  // winnaar). Het bonusgemiddelde zelf komt nu uit berekenPouleGemiddelden
+  // (avgBonus) — één bron van waarheid in plaats van een losse lokale som.
+  let koploper=null,hoogsteTotaal=-Infinity;
   ctx.participants.forEach(q=>{
     const qp=ctx.predictions[q.id]||{};const qk=ctx.koPredictions[q.id]||{};
     let qGToto=0,qGExact=0,qGDoorstoot=0,qKoToto=0,qKoExact=0,qBonus=0;
@@ -563,7 +592,6 @@ function berekenAnalyseFeiten(deelnemer, ctx){
       if(v){const qq=ctx.bonusQuestions.find(bq=>String(bq.idx)===String(qi));qBonus+=(qq?.points??20);}
     });
     const qTotaal=qGToto+qGExact+qGDoorstoot+qKoToto+qKoExact+qBonus;
-    somBonus+=qBonus;nDeel++;
     if(qTotaal>hoogsteTotaal){hoogsteTotaal=qTotaal;koploper=q;}
   });
   const totaal=gToto+gExact+gDoorstoot+koToto+koExact+bonus;
@@ -590,7 +618,7 @@ function berekenAnalyseFeiten(deelnemer, ctx){
   }:null;
 
   // ── Poulegemiddelden: gedeelde functie, zelfde cijfers als de homepage ──
-  const {avgGroepToto,avgGroepExact,avgKoToto,avgKoExact}=berekenPouleGemiddelden(ctx);
+  const {avgGroepToto,avgGroepExact,avgKoToto,avgKoExact,avgDoorstoot,avgBonus}=berekenPouleGemiddelden(ctx);
 
   // ── Percentages vooraf berekenen (i.p.v. Louis ter plekke te laten rekenen —
   // dat leidde eerder tot een verwarde/haperende zin toen hij een percentage met
@@ -603,6 +631,30 @@ function berekenAnalyseFeiten(deelnemer, ctx){
   // i.p.v. hardgecodeerd — blijft dan kloppen ook als het toernooiformat wijzigt.
   const maxDoorstoot=(ctx.koMatches||[]).filter(m=>m.round_id==="r16").length*2;
   const doorstootPct=maxDoorstoot>0?Math.round(doorstootGoed/maxDoorstoot*100):null;
+
+  // ── Zwakste onderdeel: relatieve afwijking t.o.v. het poulegemiddelde, over
+  // 6 categorieën (4 toto/exact-percentages + doorstoot-pct + bonuspunten).
+  // Relatief (verschil/gemiddelde) i.p.v. absoluut, zodat percentage-punten en
+  // bonuspunten (verschillende eenheden) eerlijk naast elkaar gelegd kunnen
+  // worden. Puur een WIJZER naar welk bestaand feitenpaar de tip moet dragen —
+  // geen nieuw getal dat Louis moet interpreteren of voorrekenen (rule 2).
+  // Iedere deelnemer heeft altijd een zwakste onderdeel, ook de koploper — er
+  // is geen perfecte score, dus dit hoeft nooit negatief/kritisch gebracht te
+  // worden, wel altijd als basis voor de afsluittip (zie ANALYSE_PROMPT 7c).
+  const kandidaten=[
+    {categorie:"groepsfase_toto", zelf:groepTotoPct, gem:avgGroepToto},
+    {categorie:"groepsfase_exact", zelf:groepExactPct, gem:avgGroepExact},
+    {categorie:"ko_toto", zelf:koTotoPct, gem:avgKoToto},
+    {categorie:"ko_exact", zelf:koExactPct, gem:avgKoExact},
+    {categorie:"doorstoot", zelf:doorstootPct, gem:avgDoorstoot},
+    {categorie:"bonusvragen", zelf:bonus, gem:avgBonus},
+  ].filter(k=>k.zelf!==null&&k.gem!==null&&k.gem!==0)
+   .map(k=>({...k, relatieveAfwijking:(k.zelf-k.gem)/k.gem}));
+  let zwaksteOnderdeel=null;
+  if(kandidaten.length>0){
+    const laagste=kandidaten.reduce((min,k)=>k.relatieveAfwijking<min.relatieveAfwijking?k:min);
+    zwaksteOnderdeel={categorie:laagste.categorie};
+  }
 
   // ── Wereldkampioen-bonusvraag (defensief: alleen als vraag vindbaar én finale gespeeld) ──
   let kampioenFeit=null;
@@ -657,7 +709,8 @@ function berekenAnalyseFeiten(deelnemer, ctx){
     // Poulegemiddelden zijn PERCENTAGES, per fase apart (groep vs KO) — zelfde
     // cijfers als het "Opvallend"-blok op de homepage. Vergelijk dus altijd
     // groepsfase-percentage met groepsfase-gemiddelde, KO met KO — nooit kruislings.
-    poule_gemiddelde:{groepsfase_toto_pct:avgGroepToto, groepsfase_exact_pct:avgGroepExact, ko_toto_pct:avgKoToto, ko_exact_pct:avgKoExact, bonuspunten:nDeel?Math.round(somBonus/nDeel):null},
+    poule_gemiddelde:{groepsfase_toto_pct:avgGroepToto, groepsfase_exact_pct:avgGroepExact, ko_toto_pct:avgKoToto, ko_exact_pct:avgKoExact, doorstoot_pct:avgDoorstoot, bonuspunten:avgBonus},
+    zwakste_onderdeel:zwaksteOnderdeel,
     concurrent:concurrent?{
       naam:`${concurrent.first_name} ${concurrent.last_name}`,
       gemiddeld_posities_verschil:Math.round(kleinsteAfstand*10)/10,

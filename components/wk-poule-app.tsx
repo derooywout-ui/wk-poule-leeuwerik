@@ -736,6 +736,23 @@ function berekenAnalyseFeiten(deelnemer, ctx){
   // (geen enkele gekantelde wedstrijd geraakt) — dan is er niks te vertellen.
   const gelukPechFeit=gelukPechVan(uid);
 
+  // ── Leeg gelaten wedstrijden: KO-wedstrijden die nog open stonden op het
+  // moment van het maken van deze analyse (teams bekend, nog geen uitslag —
+  // dus een voorspelling was mogelijk) maar waar de deelnemer niets invulde.
+  // Op Wouts verzoek: dit is een aanmoediging/dreigement richting deelnemers
+  // ("Louis velt een vernietigend oordeel als je wedstrijden leeg laat") en
+  // geldt voor ALLE nog open KO-wedstrijden, elke ronde — niet alleen de
+  // finale. Zie ANALYSE_PROMPT: dit oordeel overstijgt bewust de mildheids-
+  // clausule (regel 8), ongeacht klassementspositie.
+  const leegGelatenWedstrijden=(ctx.koMatches||[])
+    .filter(m=>m.home_team&&m.away_team&&(m.home_goals===null||m.home_goals===undefined)&&!koPred[m.id])
+    .map(m=>{
+      const ronde=KO_ROUNDS.find(r=>r.id===m.round_id);
+      const label=ronde?ronde.label:m.round_id;
+      return `${label}: ${m.home_team} - ${m.away_team}`;
+    });
+  const leegGelatenFeit=leegGelatenWedstrijden.length>0?{wedstrijden:leegGelatenWedstrijden}:null;
+
   return {
     naam:`${deelnemer.first_name} ${deelnemer.last_name}`,
     totaal_deelnemers:ctx.participants.length,
@@ -761,6 +778,7 @@ function berekenAnalyseFeiten(deelnemer, ctx){
     winnaar:winnaarFeit,
     wereldkampioen:kampioenFeit,
     geluk_pech:gelukPechFeit,
+    leeg_gelaten:leegGelatenFeit,
   };
 }
 
@@ -1497,14 +1515,30 @@ export default function App(){
   const [koMatches,setKoMatches]=useState([]);
   const [koPredictions,setKoPredictions]=useState({});
   const [rankingSnapshot,setRankingSnapshot]=useState([]);
+  // Watermark (created_at van de meest recente snapshot-rij die we al hebben) —
+  // nodig om bij de 15-minuten-achtergrondrefresh alleen NIEUWE snapshot-rijen
+  // op te halen i.p.v. steeds de volledige, groeiende geschiedenis opnieuw (zie
+  // egress-fix hieronder in loadAll).
+  const snapWatermarkRef=useRef(null);
   const [newsItems,setNewsItems]=useState([]);
   const [rssItems,setRssItems]=useState([]);
   const [doorstootLanden,setDoorstootLanden]=useState([]);
   const [liveScore,setLiveScore]=useState(null);
   const [loading,setLoading]=useState(true);
 
-  const loadAll=useCallback(async()=>{
-    setLoading(true);
+  // isRefresh=true → achtergrondrefresh (elke 15 min per open tab): alle andere
+  // tabellen zijn begrensd van omvang (vast aantal deelnemers x vaste wedstrijden),
+  // dus die blijven gewoon volledig herladen. ALLEEN rankings_snapshot groeit
+  // onbegrensd door tijdens het toernooi (14.000+ rijen en groeiend) — die tabel
+  // wordt bij een refresh daarom alleen als DELTA opgehaald (created_at > laatst
+  // geziene watermark) en aan de bestaande state toegevoegd, i.p.v. in zijn
+  // geheel opnieuw gedownload. Dit was de hoofdoorzaak van de Supabase-egress-
+  // overschrijding (174% van de 5GB-egress-quota, zie gesprek met Wout 7 juli).
+  const loadAll=useCallback(async(isRefresh=false)=>{
+    if(!isRefresh) setLoading(true);
+    const snapQuery=(isRefresh&&snapWatermarkRef.current)
+      ? `select=participant_id,rank,matches_played,speeldatum,created_at&order=created_at.asc&created_at=gt.${encodeURIComponent(snapWatermarkRef.current)}`
+      : "select=participant_id,rank,matches_played,speeldatum,created_at&order=created_at.desc&limit=40000";
     const [parts,results,preds,bq,ba,bs,kom,kop,snap,news,rss,doorstoot,live]=await Promise.all([
       db.get("participants","select=*&order=created_at"),
       db.get("match_results","select=*"),
@@ -1514,10 +1548,7 @@ export default function App(){
       db.get("bonus_scores","select=*&limit=10000"),
       db.get("ko_matches","select=*&order=match_num"),
       db.get("ko_predictions","select=*&limit=2000"),
-      // Limiet ruim boven de huidige rijenteller (14.049 op 2 juli) gezet, met
-      // marge voor de rest van het toernooi tot 19 juli. Blijft onder de Supabase
-      // Max Rows-instelling (50.000), dus geen nieuwe server-side afkap.
-      db.get("rankings_snapshot","select=participant_id,rank,matches_played,speeldatum,created_at&order=created_at.desc&limit=40000"),
+      db.get("rankings_snapshot",snapQuery),
       db.get("news_items","select=*&order=created_at.desc&limit=3"),
       db.get("rss_items","select=*&order=pub_date.desc&limit=5"),
       db.get("doorstoot_landen","select=team_name"),
@@ -1555,7 +1586,17 @@ export default function App(){
       setBonusScores(s);
     }
     if(kom) setKoMatches(kom);
-    if(snap) setRankingSnapshot(snap);
+    if(snap&&snap.length>0){
+      if(isRefresh){
+        setRankingSnapshot(prev=>[...prev,...snap]); // alleen de nieuwe (delta) rijen erbij
+      }else{
+        setRankingSnapshot(snap); // initiële load: volledige geschiedenis, vervangt state
+      }
+      // Watermark = created_at van de meest recente rij in dit resultaat (snap is
+      // desc gesorteerd bij initiële load → snap[0]; asc bij refresh → laatste item).
+      const nieuwsteCreatedAt=isRefresh?snap[snap.length-1].created_at:snap[0].created_at;
+      if(!snapWatermarkRef.current||nieuwsteCreatedAt>snapWatermarkRef.current) snapWatermarkRef.current=nieuwsteCreatedAt;
+    }
     if(news) setNewsItems(news);
     if(rss) setRssItems(rss);
     if(doorstoot) setDoorstootLanden(doorstoot.map(r=>r.team_name));
@@ -1580,15 +1621,16 @@ export default function App(){
     }catch(e){}
   },[]);
 
-  useEffect(()=>{loadAll();},[loadAll]);
+  useEffect(()=>{loadAll(false);},[loadAll]);
 
   // Auto-refresh data every 15 minutes (silent background update).
-  // Was 5 minuten; verlengd om de Supabase-egress te beperken — met de Range-
-  // header-fix haalt elke ververs-beurt nu de volledige (groeiende) rankings_
-  // snapshot-geschiedenis op i.p.v. de eerder stiekem afgekapte 10.000 rijen.
+  // isRefresh=true zorgt dat rankings_snapshot alleen als delta wordt opgehaald
+  // (zie loadAll) — dit was de hoofdoorzaak van de Supabase-egress-overschrijding,
+  // niet de 15-minuten-frequentie an sich (die stond er al, maar haalde tot
+  // vandaag steeds de VOLLEDIGE, groeiende snapshot-geschiedenis opnieuw op).
   useEffect(()=>{
     const interval=setInterval(()=>{
-      loadAll();
+      loadAll(true);
     }, 15 * 60 * 1000); // 15 minutes
     return()=>clearInterval(interval);
   },[loadAll]);
@@ -4595,6 +4637,27 @@ function DeelnemerOverlay({p, ctx, onClose}){
                 </div>
               </div>
             )}
+            {louisSchema&&(()=>{
+              // Platte-tekstversie van tabel + verslag, voor delen via WhatsApp/e-mail
+              // (die renderen geen React-tabel, dus een simpele regel-per-onderdeel-lijst).
+              const tabelTekst=[
+                ...louisSchema.rijen.map(r=>`${r.onderdeel}: ${r.zelf_pct!==null?r.zelf_pct+"%":"—"} (gemiddelde ${r.gemiddelde_pct!==null?r.gemiddelde_pct+"%":"—"}, winnaar ${r.winnaar_pct!==null?r.winnaar_pct+"%":"—"})`),
+                `${louisSchema.geluk_pech.onderdeel}: ${louisSchema.geluk_pech.zelf_ratio} (winnaar ${louisSchema.geluk_pech.winnaar_ratio}, verschil ${louisSchema.geluk_pech.verschil_punten} punten)`,
+              ].join("\n");
+              const deelTekst=`🎙 De analyse van Louis — ${p.first_name} ${p.last_name}\n\n${louisVerslag}\n\n📊 Onderdeel in cijfers\n${tabelTekst}\n\nBekijk de hele WK Poule Leeuwerik: https://v0-wk-poule-leeuwerik.vercel.app/`;
+              return(
+                <div style={{padding:"0 22px 22px",display:"flex",gap:8}}>
+                  <a href={`https://wa.me/?text=${encodeURIComponent(deelTekst)}`} target="_blank" rel="noopener noreferrer"
+                     style={{...S.btn("green"),textDecoration:"none",display:"inline-flex",alignItems:"center",gap:6}}>
+                    💬 Deel via WhatsApp
+                  </a>
+                  <a href={`mailto:?subject=${encodeURIComponent("De analyse van Louis — "+p.first_name+" "+p.last_name)}&body=${encodeURIComponent(deelTekst)}`}
+                     style={{...S.btn(),textDecoration:"none",display:"inline-flex",alignItems:"center",gap:6}}>
+                    ✉️ Deel via e-mail
+                  </a>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

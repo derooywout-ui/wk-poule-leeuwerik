@@ -858,11 +858,23 @@ function ScoreStepper({value,onChange,disabled}){
   // Default to 0 if not set yet — one click to start
   const parsed=(value===undefined||value===null||value==="")? 0:parseInt(value,10);
   const isDefault=(value===undefined||value===null||value==="");
-  function dec(e){e.preventDefault();if(disabled||parsed<=0)return;onChange(parsed-1);}
+  // BUGFIX (7 juli, gemeld door Wout — 0-0 na verlenging/strafschoppen werd niet
+  // opgeslagen zonder de omweg "eerst naar 1, dan terug naar 0"):
+  // vóór deze fix deed de '−'-knop bij een ongebruikte (default) stepper NIETS
+  // (parsed<=0 blokkeerde 'm), terwijl de '+'-knop vanuit diezelfde default-staat
+  // gewoon een expliciete 1 doorgaf. Daardoor was er geen enkele manier om een
+  // stepper direct op een EXPLICIETE 0 te zetten (i.p.v. "nog niet ingevuld") —
+  // je moest eerst naar 1 en weer terug, wat niemand zou verzinnen zonder het
+  // toevallig te ontdekken. Nu bevestigt de '−'-knop, zolang de stepper nog op
+  // de default staat, in één klik een expliciete 0 (net zo direct als de
+  // '+'-knop dat al deed voor een expliciete 1). Pas ZODRA de stepper al
+  // expliciet op 0 staat, is verder omlaag natuurlijk niet meer mogelijk.
+  const decDisabled=disabled||(parsed<=0&&!isDefault);
+  function dec(e){e.preventDefault();if(decDisabled)return;onChange(isDefault?0:parsed-1);}
   function inc(e){e.preventDefault();if(disabled)return;onChange(parsed+1);}
   return(
     <div style={{display:"flex",alignItems:"center",border:`2px solid ${!isDefault?COLORS.green:COLORS.border}`,borderRadius:8,overflow:"hidden",background:disabled?"#f5f5f5":"#fff"}}>
-      <button type="button" onClick={dec} disabled={disabled||parsed<=0} style={{width:38,height:42,border:"none",borderRight:`1px solid ${COLORS.border}`,background:"transparent",fontSize:20,fontWeight:700,cursor:(disabled||parsed<=0)?"default":"pointer",color:COLORS.green,opacity:(disabled||parsed<=0)?0.2:1}}>−</button>
+      <button type="button" onClick={dec} disabled={decDisabled} style={{width:38,height:42,border:"none",borderRight:`1px solid ${COLORS.border}`,background:"transparent",fontSize:20,fontWeight:700,cursor:decDisabled?"default":"pointer",color:COLORS.green,opacity:decDisabled?0.2:1}}>−</button>
       <div style={{width:36,textAlign:"center",fontSize:17,fontWeight:800,color:COLORS.dark,userSelect:"none"}}>{parsed}</div>
       <button type="button" onClick={inc} disabled={disabled} style={{width:38,height:42,border:"none",borderLeft:`1px solid ${COLORS.border}`,background:"transparent",fontSize:20,fontWeight:700,cursor:disabled?"default":"pointer",color:COLORS.green,opacity:disabled?0.2:1}}>+</button>
     </div>

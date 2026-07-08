@@ -2583,6 +2583,9 @@ function HomeView({setView,ctx}){
 {/* Nu Live blok — alleen tonen als er een wedstrijd bezig is */}
       <NuLiveBlok liveScore={ctx.liveScore} ctx={ctx} setView={setView}/>
 
+      {/* Tijdlijn: waar staan we in het toernooi (datums 100% data-driven, zie component) */}
+      <TournamentTimeline ctx={ctx}/>
+
       
 {/* Eerstvolgende wedstrijden */}
       {(()=>{
@@ -2729,6 +2732,31 @@ function HomeView({setView,ctx}){
                 <span style={{...S.badge,fontSize:14,padding:"3px 10px"}}>{p.total} pt</span>
               </div>
             ))}
+          </div>
+        );
+      })()}
+
+
+      {/* Terugblik groepsfase: link naar de volledige poulestanden (alle 12 groepen
+          + beste-nummers-3), nu de groepsfase is afgesloten. Bewust GEEN eigen tab
+          in de topnav (die staat al vol: Home/Klassement/Programma/Help/etc.) —
+          een compacte link hier, in het verlengde van "Volledig klassement",
+          houdt het overzichtelijk terwijl de poulestanden toch vindbaar blijven. */}
+      {/* Terugblik groepsfase: link naar de volledige poulestanden (alle 12 groepen
+          + beste-nummers-3). Conditie is data-driven (alle groepswedstrijden
+          gespeeld), NIET "zodra er een uitslag is" — anders verschijnt dit blok
+          bij een volgend toernooi (EK 2028) al na de allereerste wedstrijd,
+          terwijl de groepsfase dan nog volop bezig is. Bewust GEEN eigen tab
+          in de topnav (die staat al vol: Home/Klassement/Programma/Help/etc.) —
+          een compacte link hier, in het verlengde van "Volledig klassement",
+          houdt het overzichtelijk terwijl de poulestanden toch vindbaar blijven. */}
+      {(()=>{
+        const totaalGroepWedstrijden=Object.keys(MATCH_SCHEDULE).length;
+        const groepGespeeld=Object.values(ctx.matchResults).filter(r=>r&&r.home!==null&&r.home!==undefined).length;
+        const poulefaseVoorbij=totaalGroepWedstrijden>0&&groepGespeeld>=totaalGroepWedstrijden;
+        return poulefaseVoorbij&&(
+          <div style={{textAlign:"center",marginTop:-8,marginBottom:16}}>
+            <button style={{...S.btn(),fontSize:12,padding:"6px 12px"}} onClick={()=>setView("alle-standen")}>📊 Terugblik groepsfase (poulestanden) →</button>
           </div>
         );
       })()}
@@ -4678,6 +4706,78 @@ function DeelnemerOverlay({p, ctx, onClose}){
   );
 }
 
+// ─── TOERNOOI-TIJDLIJN (homepage) ────────────────────────────────────────────
+// Toont waar we ons in het toernooi bevinden: Start/Einde poulefase, Begin
+// KO-fase, en elke KO-ronde. ALLE datums worden afgeleid uit echte data
+// (MATCH_SCHEDULE voor de groepsfase, ko_matches.kickoff per ronde) — er staat
+// bewust geen enkele datum hardgecodeerd in dit component. Dat betekent: bij
+// een volgend toernooi (EK 2028) hoeft hier niets aangepast te worden — zodra
+// het nieuwe wedstrijdschema is ingevoerd, klopt deze tijdlijn vanzelf, en een
+// fase die nog geen bekende datum heeft (bijv. KO-rondes vlak na een reset)
+// wordt gewoon nog niet getoond.
+function TournamentTimeline({ctx}){
+  const C=COLORS;
+  const groepTimestamps=Object.values(MATCH_SCHEDULE).map(s=>parseWKDate(s.date).getTime()).filter(t=>!isNaN(t));
+  const startPoule=groepTimestamps.length?new Date(Math.min(...groepTimestamps)):null;
+  const eindePoule=groepTimestamps.length?new Date(Math.max(...groepTimestamps)):null;
+
+  function minKickoffVoorRonde(roundId){
+    const stamps=(ctx.koMatches||[])
+      .filter(m=>m.round_id===roundId&&m.kickoff)
+      .map(m=>new Date(m.kickoff).getTime());
+    return stamps.length?new Date(Math.min(...stamps)):null;
+  }
+  const alleKoStamps=(ctx.koMatches||[]).filter(m=>m.kickoff).map(m=>new Date(m.kickoff).getTime());
+  const beginKo=alleKoStamps.length?new Date(Math.min(...alleKoStamps)):null;
+
+  const stages=[
+    {key:"start_poule",label:"Start poulefase",date:startPoule},
+    {key:"einde_poule",label:"Einde poulefase",date:eindePoule},
+    {key:"begin_ko",label:"Begin KO-fase",date:beginKo},
+    {key:"r16",label:"Zestiende finales",date:minKickoffVoorRonde("r16")},
+    {key:"r8",label:"Achtste finales",date:minKickoffVoorRonde("r8")},
+    {key:"r4",label:"Kwartfinales",date:minKickoffVoorRonde("r4")},
+    {key:"r2",label:"Halve finales",date:minKickoffVoorRonde("r2")},
+    {key:"r3",label:"Troostfinale",date:minKickoffVoorRonde("r3")},
+    {key:"r1",label:"Finale",date:minKickoffVoorRonde("r1")},
+  ].filter(s=>s.date instanceof Date&&!isNaN(s.date));
+
+  if(stages.length<2) return null; // te weinig data bekend (bijv. vlak na reset voor een nieuw toernooi)
+
+  const now=new Date();now.setHours(0,0,0,0);
+
+  return(
+    <div style={S.card}>
+      <h2 style={{...S.h2,marginBottom:16,fontSize:16}}>📍 Waar staan we?</h2>
+      <div style={{display:"flex",overflowX:"auto",paddingBottom:6}}>
+        {stages.map((s,i)=>{
+          const bereikt=s.date<=now;
+          const volgende=stages[i+1];
+          const isHuidig=bereikt&&(!volgende||volgende.date>now);
+          const isLast=i===stages.length-1;
+          const lijnGroen=bereikt&&volgende&&volgende.date<=now;
+          return(
+            <div key={s.key} style={{display:"flex",alignItems:"flex-start",flex:isLast?"0 0 auto":"1 1 0%"}}>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:74}}>
+                <div style={{
+                  width:isHuidig?16:12,height:isHuidig?16:12,borderRadius:"50%",flexShrink:0,
+                  background:bereikt?C.green:"#fff",
+                  border:`2px solid ${bereikt?C.green:C.border}`,
+                  boxShadow:isHuidig?"0 0 0 4px rgba(0,150,80,0.18)":"none",
+                }}/>
+                <div style={{fontSize:10,fontWeight:isHuidig?800:600,color:bereikt?C.dark:C.gray,textAlign:"center",marginTop:6,lineHeight:1.25,maxWidth:78}}>{s.label}</div>
+                <div style={{fontSize:9,color:C.gray,marginTop:2,whiteSpace:"nowrap"}}>{s.date.toLocaleDateString("nl-NL",{day:"numeric",month:"short"})}</div>
+              </div>
+              {!isLast&&<div style={{flex:1,height:2,background:lijnGroen?C.green:C.border,minWidth:16,marginTop:5}}/>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
 // ─── SPEELRONDE MAP ──────────────────────────────────────────────────────────
 // Ronde 1 = 1e speeldag per groep, Ronde 2 = 2e, Ronde 3 = 3e (laatste groepswedstrijden)
 // Per groep spelen 4 teams → 6 wedstrijden op 3 × 2 speeldagen
@@ -5756,22 +5856,10 @@ function DagProgrammaView({ctx, setView}){
         </div>
       )}
 
-      {/* Beste nummers 3 stand - altijd zichtbaar zodra er uitslagen zijn */}
-      {calcBesteDerdes(ctx.matchResults).length>=1&&(
-        <div>
-          <div style={{height:1,background:COLORS.border,margin:"8px 0 20px"}}/>
-          <BesteDerdesStand matchResults={ctx.matchResults}/>
-        </div>
-      )}
-
-      {/* Link naar alle standen */}
-      {Object.keys(ctx.matchResults).length>0&&(
-        <div style={{textAlign:"center",marginTop:20}}>
-          <button onClick={()=>setView("alle-standen")} style={{...S.btn("green"),padding:"10px 20px"}}>
-            📊 Bekijk alle standen van alle groepen →
-          </button>
-        </div>
-      )}
+      {/* Beste nummers 3-tabel en de link naar "Alle standen" zijn hier weggehaald
+          (7-8 juli, op verzoek van Wout) — tijdens de KO-fase is dit niet meer de
+          relevante plek om terug te kijken op de groepsfase. Die link staat nu op
+          de homepage, direct onder "Top 5 klassement". */}
     </div>
   );
 }
@@ -5791,8 +5879,8 @@ function AlleStandenView({ctx, setView}){
             <h2 style={{...S.h2,marginBottom:4}}>📊 Alle standen</h2>
             <p style={{fontSize:13,color:C.gray,margin:0}}>Volledig overzicht van alle 12 groepen + de stand van de beste nummers 3.</p>
           </div>
-          <button onClick={()=>setView("dagprogramma")} style={{...S.btn(),fontSize:13}}>
-            ← Terug naar Programma
+          <button onClick={()=>setView("home")} style={{...S.btn(),fontSize:13}}>
+            ← Terug naar Home
           </button>
         </div>
       </div>

@@ -5579,9 +5579,18 @@ function DagProgrammaView({ctx, setView}){
     // Gebruik navTarget datum als die er is
     if(ctx.navTarget?.date) return ctx.navTarget.date;
     const now=new Date();
+    now.setHours(0,0,0,0);
     const months=["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"];
     const todayKey=`${now.getDate()} ${months[now.getMonth()]}`;
-    return allDates.includes(todayKey)?todayKey:(allDates[0]||"");
+    if(allDates.includes(todayKey)) return todayKey;
+    // BUGFIX (8 juli, gemeld door Wout): geen wedstrijden vandaag betekende
+    // voorheen een terugval op allDates[0] — altijd de allereerste toernooidag
+    // (11 juni), ongeacht hoe ver het toernooi al gevorderd was. Nu: pak de
+    // eerstvolgende datum ná vandaag met wedstrijden. Is het toernooi al
+    // helemaal afgelopen (geen enkele datum meer in de toekomst), val dan terug
+    // op de LAATSTE speeldag (meest recent), niet de eerste.
+    const volgende=allDates.find(d=>parseWKDate(d)>=now);
+    return volgende||allDates[allDates.length-1]||"";
   });
   // Auto-open het juiste match uitklap via navTarget
   const [autoOpenMid,setAutoOpenMid]=useState(ctx.navTarget?.matchId||null);
@@ -5620,6 +5629,11 @@ function DagProgrammaView({ctx, setView}){
       {selectedDate&&(
         <div>
           <h3 style={{...S.h3,fontSize:16,color:COLORS.green,marginBottom:14}}>{weekdag.charAt(0).toUpperCase()+weekdag.slice(1)} {selectedDate} — {dayMatches.length} wedstrijd{dayMatches.length!==1?"en":""}</h3>
+          {dayMatches.length===0&&(
+            <div style={{...S.card,textAlign:"center",color:COLORS.gray,padding:"24px 16px"}}>
+              Geen wedstrijden op deze dag. Kies hierboven een andere speeldag.
+            </div>
+          )}
           {dayMatches.map((matchEntry)=>{
             const {mid,time,city,isKO,match:koMatch}=matchEntry;
             // KO match rendering

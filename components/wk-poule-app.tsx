@@ -5885,13 +5885,6 @@ function AlleStandenView({ctx, setView}){
         </div>
       </div>
 
-      {/* Beste nummers 3 — boven aan, want bepaalt doorstoot */}
-      {calcBesteDerdes(ctx.matchResults).length>=1&&(
-        <div style={{marginBottom:16}}>
-          <BesteDerdesStand matchResults={ctx.matchResults}/>
-        </div>
-      )}
-
       {/* Alle 12 groepen in een grid */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:14}}>
         {Object.entries(WK_GROUPS).map(([grp,teams])=>(
@@ -5900,6 +5893,13 @@ function AlleStandenView({ctx, setView}){
           </div>
         ))}
       </div>
+
+      {/* Beste nummers 3 — onderaan, na alle groepsstanden (op verzoek van Wout, 8 juli) */}
+      {calcBesteDerdes(ctx.matchResults).length>=1&&(
+        <div style={{marginTop:16}}>
+          <BesteDerdesStand matchResults={ctx.matchResults}/>
+        </div>
+      )}
     </div>
   );
 }

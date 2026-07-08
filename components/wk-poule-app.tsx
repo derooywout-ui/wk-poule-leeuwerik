@@ -6,7 +6,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 
 const SUPABASE_URL = "https://votagyldoiubrffnkokr.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvdGFneWxkb2l1YnJmZm5rb2tyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3Mjc3MzcsImV4cCI6MjA5NTMwMzczN30.ezW6V8Peegrxac83HNmN21Yo6sISEWkuTdZuD2lYL-s";
-const ADMIN_PASSWORD = "Ikwindewkpouleniet26";
+// ADMIN_PASSWORD is verplaatst naar een server-side env var (zie app/api/admin-login/route.ts) —
+// hier stond 'm voorheen kaal als string, zichtbaar voor iedereen die de broncode opende.
 const DEADLINE = new Date("2026-06-11T21:00:00+02:00");
 const MAX_PARTICIPANTS = 100;
 
@@ -5978,17 +5979,34 @@ function AdminInstellingen({ctx}){
 
 // ─── ADMIN ───────────────────────────────────────────────────────────────────
 function AdminView({ctx}){
-  const [pw,setPw]=useState("");const [pwErr,setPwErr]=useState("");
+  const [pw,setPw]=useState("");const [pwErr,setPwErr]=useState("");const [pwChecking,setPwChecking]=useState(false);
   const [tab,setTab]=useState(()=>localStorage.getItem("adminTab")||"results");
   const setAdminTab=(t)=>{localStorage.setItem("adminTab",t);setTab(t);};
+  // Wachtwoord-check gebeurt nu server-side (app/api/admin-login/route.ts), tegen
+  // een Vercel-omgevingsvariabele — niet meer tegen een string die in de client-
+  // bundle stond. Wijzigen van het wachtwoord = alleen de env var aanpassen in
+  // Vercel, geen code-wijziging of nieuwe deploy van dit bestand nodig.
+  async function probeerInloggen(){
+    if(!pw||pwChecking) return;
+    setPwChecking(true);setPwErr("");
+    try{
+      const res=await fetch("/api/admin-login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
+      const data=await res.json();
+      if(data.ok) ctx.setIsAdmin(true);
+      else setPwErr(data.error||"Onjuist wachtwoord");
+    }catch{
+      setPwErr("Kon niet inloggen — probeer het opnieuw.");
+    }
+    setPwChecking(false);
+  }
   if(!ctx.isAdmin) return(
     <div style={{...S.card,maxWidth:360,margin:"0 auto"}}>
       <h2 style={S.h2}>🔒 Beheerderspaneel</h2>
       <label style={S.label}>Wachtwoord</label>
       <input type="password" style={{...S.input,marginBottom:10}} value={pw} onChange={e=>setPw(e.target.value)}
-        onKeyDown={e=>e.key==="Enter"&&(pw===ADMIN_PASSWORD?ctx.setIsAdmin(true):setPwErr("Onjuist wachtwoord"))} placeholder="••••••••"/>
+        onKeyDown={e=>e.key==="Enter"&&probeerInloggen()} placeholder="••••••••" disabled={pwChecking}/>
       {pwErr&&<div style={S.alert("err")}>{pwErr}</div>}
-      <button style={S.btn("green")} onClick={()=>pw===ADMIN_PASSWORD?ctx.setIsAdmin(true):setPwErr("Onjuist wachtwoord")}>Inloggen</button>
+      <button style={S.btn("green")} onClick={probeerInloggen} disabled={pwChecking}>{pwChecking?"Bezig...":"Inloggen"}</button>
     </div>
   );
   const tabs=[{id:"results",label:"📊 Uitslagen"},{id:"ko",label:"⚡ Knock-out"},{id:"doorstoot",label:"🏆 Doorstoot"},{id:"bonus",label:"🎁 Bonusvragen"},{id:"beoordeel",label:"✅ Beoordelen"},{id:"users",label:"Deelnemers"},{id:"news",label:"📢 Nieuws"},{id:"analyses",label:"🎙 Analyses"},{id:"instellingen",label:"🛠️ Instellingen"}];

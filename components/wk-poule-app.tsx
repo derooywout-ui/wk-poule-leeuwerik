@@ -1517,6 +1517,11 @@ function ChatHoekje({ctx}){
 export default function App(){
   const [view,setView]=useState("home");
   const [navTarget,setNavTarget]=useState(null); // {matchId, date} voor directe navigatie
+  // SPA-fix (8 juli, gemeld door Wout): bij het wisselen van view (bijv. via een
+  // knop als "Terugblik groepsfase") bleef de scrollpositie van de vorige pagina
+  // hangen, waardoor je middenin de nieuwe pagina belandde i.p.v. bovenaan. Dit
+  // geldt centraal voor ELKE navigatie, niet alleen deze ene knop.
+  useEffect(()=>{ window.scrollTo(0,0); },[view]);
   const [currentUser,setCurrentUser]=useState(null);
   const [isAdmin,setIsAdmin]=useState(false);
   const [participants,setParticipants]=useState([]);

@@ -4726,14 +4726,22 @@ function TournamentTimeline({ctx}){
   const startPoule=groepTimestamps.length?new Date(Math.min(...groepTimestamps)):null;
   const eindePoule=groepTimestamps.length?new Date(Math.max(...groepTimestamps)):null;
 
+  function tot0uur(d){const r=new Date(d);r.setHours(0,0,0,0);return r;}
+
   function minKickoffVoorRonde(roundId){
     const stamps=(ctx.koMatches||[])
       .filter(m=>m.round_id===roundId&&m.kickoff)
       .map(m=>new Date(m.kickoff).getTime());
-    return stamps.length?new Date(Math.min(...stamps)):null;
+    // BUGFIX (9 juli, gemeld door Wout): kickoff-tijden bevatten het exacte uur
+    // (bijv. vandaag 21:00), terwijl 'now' hieronder wordt afgekapt tot
+    // middernacht. Zonder deze tot0uur()-correctie werd een ronde daardoor pas
+    // de DAG ERNA als "bereikt" gemarkeerd, niet op de speeldag zelf — precies
+    // het probleem dat de tijdlijn nog "kwartfinales" toonde terwijl de eerste
+    // halve finale al diezelfde avond gespeeld werd.
+    return stamps.length?tot0uur(new Date(Math.min(...stamps))):null;
   }
   const alleKoStamps=(ctx.koMatches||[]).filter(m=>m.kickoff).map(m=>new Date(m.kickoff).getTime());
-  const beginKo=alleKoStamps.length?new Date(Math.min(...alleKoStamps)):null;
+  const beginKo=alleKoStamps.length?tot0uur(new Date(Math.min(...alleKoStamps))):null;
 
   const stages=[
     {key:"start_poule",label:"Start poulefase",date:startPoule},

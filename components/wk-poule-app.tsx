@@ -6252,11 +6252,20 @@ function AdminView({ctx}){
 // antwoord nog NIET is beoordeeld — al beoordeelde antwoorden (de "zekere fout"
 // die je al hebt ingevuld) zitten al correct verwerkt in de basis-punten.
 //
-// AANNAME om hier expliciet te noemen: voor de rode-kaarten-vraag ga ik uit van
-// een EXACTE match (het opgegeven aantal moet precies overeenkomen met wat een
-// deelnemer invulde). Als je 'm anders beoordeelt (bijv. "dichtstbijzijnde wint"
-// of een marge van 1), klopt deze simulatie op dat punt niet — laat het weten.
-function berekenScenarioStand(ctx, {troostWinnaar, finaleWinnaar, rodeKaarten, kampioen}){
+// BUGFIX (9 juli, gemeld door Wout): toto-punten voor KO-wedstrijden zijn in
+// deze poule gebaseerd op de UITSLAG NA 90 MINUTEN (zie berekenAllePuntenTotalen
+// hierboven, regel met `calcToto(pp.home,pp.away)===calcToto(m.home_goals,
+// m.away_goals)` — gebruikt uitsluitend home_goals/away_goals, nooit
+// home_goals_et of strafschoppen). Wie er UITEINDELIJK doorgaat (na verlenging/
+// strafschoppen) is voor de toto-punten irrelevant. De eerste versie van deze
+// tool vroeg per ongeluk naar "wie wint de wedstrijd" (met verlenging/
+// strafschoppen inbegrepen) i.p.v. naar de 90-minuten-uitslag, en had ook geen
+// gelijkspel-optie — een gelijkspel na 90 minuten is echter een net zo geldige,
+// apart te voorspellen uitkomst als een overwinning. Nu vraagt de tool
+// rechtstreeks naar de 90-minuten-uitslag (thuis wint / gelijk / uit wint),
+// met dezelfde W/D/L-codering als calcToto() zelf gebruikt — geen vertaalslag
+// naar teamnamen meer nodig, dus ook geen ruimte meer voor deze fout.
+function berekenScenarioStand(ctx, {troostUitslag, finaleUitslag, rodeKaarten, kampioen}){
   const alleTotalen=berekenAllePuntenTotalen(ctx); // alles wat al vaststaat
   const troostMatch=(ctx.koMatches||[]).find(m=>m.round_id==="r3");
   const finaleMatch=(ctx.koMatches||[]).find(m=>m.round_id==="r1");
@@ -6267,15 +6276,13 @@ function berekenScenarioStand(ctx, {troostWinnaar, finaleWinnaar, rodeKaarten, k
     const pid=t.participant.id;
     let extra=0;
 
-    if(troostMatch&&troostWinnaar){
-      const toto=troostWinnaar===troostMatch.home_team?"W":troostWinnaar===troostMatch.away_team?"L":null;
+    if(troostMatch&&troostUitslag){
       const pp=(ctx.koPredictions[pid]||{})[troostMatch.id];
-      if(toto&&pp&&pp.home!==undefined&&pp.home!==null&&calcToto(pp.home,pp.away)===toto) extra+=KO_TOTO_PTS;
+      if(pp&&pp.home!==undefined&&pp.home!==null&&calcToto(pp.home,pp.away)===troostUitslag) extra+=KO_TOTO_PTS;
     }
-    if(finaleMatch&&finaleWinnaar){
-      const toto=finaleWinnaar===finaleMatch.home_team?"W":finaleWinnaar===finaleMatch.away_team?"L":null;
+    if(finaleMatch&&finaleUitslag){
       const pp=(ctx.koPredictions[pid]||{})[finaleMatch.id];
-      if(toto&&pp&&pp.home!==undefined&&pp.home!==null&&calcToto(pp.home,pp.away)===toto) extra+=KO_TOTO_PTS;
+      if(pp&&pp.home!==undefined&&pp.home!==null&&calcToto(pp.home,pp.away)===finaleUitslag) extra+=KO_TOTO_PTS;
     }
     if(rodeKaartenVraag&&rodeKaarten!==""&&rodeKaarten!==null&&rodeKaarten!==undefined){
       const alBeoordeeld=(ctx.bonusScores[pid]||{})[rodeKaartenVraag.idx]!==undefined;
@@ -6304,10 +6311,10 @@ function AdminScenarios({ctx}){
   const finaleMatch=(ctx.koMatches||[]).find(m=>m.round_id==="r1");
   const rodeKaartenVraag=(ctx.bonusQuestions||[]).find(q=>/rode kaart/i.test(q.question||""));
 
-  const [troostWinnaar,setTroostWinnaar]=useState("");
-  const [finaleWinnaar,setFinaleWinnaar]=useState("");
+  const [troostUitslag,setTroostUitslag]=useState(""); // "W"=thuis wint, "D"=gelijk, "L"=uit wint (90 min)
+  const [finaleUitslag,setFinaleUitslag]=useState("");
   const [rodeKaarten,setRodeKaarten]=useState("");
-  const [kampioen,setKampioen]=useState("");
+  const [kampioen,setKampioen]=useState(""); // wereldkampioen-bonusvraag kijkt naar de UITEINDELIJKE winnaar, dus hier wél teamnamen (zie select hieronder) — dat is een andere vraag dan de toto-uitslag hierboven.
 
   if(!troostMatch||!troostMatch.home_team||!troostMatch.away_team||!finaleMatch||!finaleMatch.home_team||!finaleMatch.away_team){
     return(
@@ -6318,30 +6325,32 @@ function AdminScenarios({ctx}){
     );
   }
 
-  const stand=berekenScenarioStand(ctx,{troostWinnaar,finaleWinnaar,rodeKaarten,kampioen});
-  const heeftScenario=troostWinnaar||finaleWinnaar||rodeKaarten!==""||kampioen;
+  const stand=berekenScenarioStand(ctx,{troostUitslag,finaleUitslag,rodeKaarten,kampioen});
+  const heeftScenario=troostUitslag||finaleUitslag||rodeKaarten!==""||kampioen;
 
   return(
     <div>
       <h3 style={S.h3}>🔮 Scenario-simulator: wie kan de poule nog winnen?</h3>
       <p style={{fontSize:13,color:"#666",marginBottom:14,lineHeight:1.5}}>
-        Simuleert de virtuele eindstand op basis van hypothetische uitkomsten. Voor de troostfinale en finale telt <strong>alleen de toto</strong> mee (wie wint) — geen exacte score, die marge is bewust buiten beschouwing gelaten. Bonusvragen tellen alleen mee voor deelnemers wiens antwoord <strong>nog niet is beoordeeld</strong>; al beoordeelde antwoorden staan al correct in de "Huidig"-kolom.
+        Simuleert de virtuele eindstand op basis van hypothetische uitkomsten. Voor de troostfinale en finale telt de toto mee op basis van de <strong>uitslag na 90 minuten</strong> — verlenging en strafschoppen spelen voor de toto-punten geen rol (zo rekent de poule het ook echt uit), dus een gelijkspel na 90 minuten is hier een eigen, geldige optie. Exacte score telt sowieso niet mee, die marge is bewust buiten beschouwing gelaten. Bonusvragen tellen alleen mee voor deelnemers wiens antwoord <strong>nog niet is beoordeeld</strong>; al beoordeelde antwoorden staan al correct in de "Huidig"-kolom.
       </p>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12,marginBottom:20}}>
         <div>
-          <label style={S.label}>Troostfinale winnaar</label>
-          <select style={S.input} value={troostWinnaar} onChange={e=>setTroostWinnaar(e.target.value)}>
+          <label style={S.label}>Troostfinale — uitslag na 90 min</label>
+          <select style={S.input} value={troostUitslag} onChange={e=>setTroostUitslag(e.target.value)}>
             <option value="">— kies —</option>
-            <option value={troostMatch.home_team}>{troostMatch.home_team}</option>
-            <option value={troostMatch.away_team}>{troostMatch.away_team}</option>
+            <option value="W">{troostMatch.home_team} wint</option>
+            <option value="D">Gelijkspel</option>
+            <option value="L">{troostMatch.away_team} wint</option>
           </select>
         </div>
         <div>
-          <label style={S.label}>Finale winnaar</label>
-          <select style={S.input} value={finaleWinnaar} onChange={e=>setFinaleWinnaar(e.target.value)}>
+          <label style={S.label}>Finale — uitslag na 90 min</label>
+          <select style={S.input} value={finaleUitslag} onChange={e=>setFinaleUitslag(e.target.value)}>
             <option value="">— kies —</option>
-            <option value={finaleMatch.home_team}>{finaleMatch.home_team}</option>
-            <option value={finaleMatch.away_team}>{finaleMatch.away_team}</option>
+            <option value="W">{finaleMatch.home_team} wint</option>
+            <option value="D">Gelijkspel</option>
+            <option value="L">{finaleMatch.away_team} wint</option>
           </select>
         </div>
         <div>

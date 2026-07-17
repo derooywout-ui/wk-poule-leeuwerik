@@ -6224,7 +6224,7 @@ function AdminView({ctx}){
       <button style={S.btn("green")} onClick={probeerInloggen} disabled={pwChecking}>{pwChecking?"Bezig...":"Inloggen"}</button>
     </div>
   );
-  const tabs=[{id:"results",label:"📊 Uitslagen"},{id:"ko",label:"⚡ Knock-out"},{id:"doorstoot",label:"🏆 Doorstoot"},{id:"bonus",label:"🎁 Bonusvragen"},{id:"beoordeel",label:"✅ Beoordelen"},{id:"users",label:"Deelnemers"},{id:"news",label:"📢 Nieuws"},{id:"analyses",label:"🎙 Analyses"},{id:"instellingen",label:"🛠️ Instellingen"}];
+  const tabs=[{id:"results",label:"📊 Uitslagen"},{id:"ko",label:"⚡ Knock-out"},{id:"doorstoot",label:"🏆 Doorstoot"},{id:"bonus",label:"🎁 Bonusvragen"},{id:"beoordeel",label:"✅ Beoordelen"},{id:"users",label:"Deelnemers"},{id:"news",label:"📢 Nieuws"},{id:"analyses",label:"🎙 Analyses"},{id:"scenarios",label:"🔮 Scenario's"},{id:"instellingen",label:"🛠️ Instellingen"}];
   return(
     <div>
       <div style={{...S.row,marginBottom:14}}><h2 style={{...S.h2,margin:0}}>⚙️ Beheerderspaneel</h2><span style={S.tag("green")}>Admin ingelogd</span></div>
@@ -6237,7 +6237,151 @@ function AdminView({ctx}){
       {tab==="users"&&<AdminUsers ctx={ctx}/>}
       {tab==="news"&&<AdminNews ctx={ctx}/>}
       {tab==="analyses"&&<AdminAnalyses ctx={ctx}/>}
+      {tab==="scenarios"&&<AdminScenarios ctx={ctx}/>}
       {tab==="instellingen"&&<AdminInstellingen ctx={ctx}/>}
+    </div>
+  );
+}
+
+// ─── ADMIN: SCENARIO-SIMULATOR ────────────────────────────────────────────────
+// "Wie kan de poule nog winnen?" — simuleert de virtuele eindstand op basis van
+// hypothetische uitkomsten voor de 2 resterende KO-wedstrijden (alleen toto,
+// GEEN exacte score — die marge is bewust buiten beschouwing gelaten, op
+// verzoek van Wout) en de 2 nog niet beoordeelde bonusvragen (rode kaarten,
+// wereldkampioen). Bonusvragen tellen alleen mee voor deelnemers wiens
+// antwoord nog NIET is beoordeeld — al beoordeelde antwoorden (de "zekere fout"
+// die je al hebt ingevuld) zitten al correct verwerkt in de basis-punten.
+//
+// AANNAME om hier expliciet te noemen: voor de rode-kaarten-vraag ga ik uit van
+// een EXACTE match (het opgegeven aantal moet precies overeenkomen met wat een
+// deelnemer invulde). Als je 'm anders beoordeelt (bijv. "dichtstbijzijnde wint"
+// of een marge van 1), klopt deze simulatie op dat punt niet — laat het weten.
+function berekenScenarioStand(ctx, {troostWinnaar, finaleWinnaar, rodeKaarten, kampioen}){
+  const alleTotalen=berekenAllePuntenTotalen(ctx); // alles wat al vaststaat
+  const troostMatch=(ctx.koMatches||[]).find(m=>m.round_id==="r3");
+  const finaleMatch=(ctx.koMatches||[]).find(m=>m.round_id==="r1");
+  const rodeKaartenVraag=(ctx.bonusQuestions||[]).find(q=>/rode kaart/i.test(q.question||""));
+  const kampioenVraag=(ctx.bonusQuestions||[]).find(q=>String(q.idx)==="4");
+
+  return alleTotalen.map(t=>{
+    const pid=t.participant.id;
+    let extra=0;
+
+    if(troostMatch&&troostWinnaar){
+      const toto=troostWinnaar===troostMatch.home_team?"W":troostWinnaar===troostMatch.away_team?"L":null;
+      const pp=(ctx.koPredictions[pid]||{})[troostMatch.id];
+      if(toto&&pp&&pp.home!==undefined&&pp.home!==null&&calcToto(pp.home,pp.away)===toto) extra+=KO_TOTO_PTS;
+    }
+    if(finaleMatch&&finaleWinnaar){
+      const toto=finaleWinnaar===finaleMatch.home_team?"W":finaleWinnaar===finaleMatch.away_team?"L":null;
+      const pp=(ctx.koPredictions[pid]||{})[finaleMatch.id];
+      if(toto&&pp&&pp.home!==undefined&&pp.home!==null&&calcToto(pp.home,pp.away)===toto) extra+=KO_TOTO_PTS;
+    }
+    if(rodeKaartenVraag&&rodeKaarten!==""&&rodeKaarten!==null&&rodeKaarten!==undefined){
+      const alBeoordeeld=(ctx.bonusScores[pid]||{})[rodeKaartenVraag.idx]!==undefined;
+      if(!alBeoordeeld){
+        const ans=(ctx.bonusAnswers[pid]||{})[rodeKaartenVraag.idx];
+        if(ans!==undefined&&ans!==null&&ans!==""&&parseInt(ans,10)===parseInt(rodeKaarten,10)) extra+=(rodeKaartenVraag.points??20);
+      }
+    }
+    if(kampioenVraag&&kampioen){
+      const alBeoordeeld=(ctx.bonusScores[pid]||{})[kampioenVraag.idx]!==undefined;
+      if(!alBeoordeeld){
+        const ans=(ctx.bonusAnswers[pid]||{})[kampioenVraag.idx];
+        const genNaam=ans?Object.keys(NL_TO_EN_ALIAS).find(nl=>
+          ans.toLowerCase().trim().includes(nl.toLowerCase())||nl.toLowerCase().includes(ans.toLowerCase().trim())
+        ):null;
+        if(genNaam===kampioen) extra+=(kampioenVraag.points??20);
+      }
+    }
+
+    return {participant:t.participant, basis:t.qTotaal, scenario:t.qTotaal+extra};
+  }).sort((a,b)=>b.scenario-a.scenario);
+}
+
+function AdminScenarios({ctx}){
+  const troostMatch=(ctx.koMatches||[]).find(m=>m.round_id==="r3");
+  const finaleMatch=(ctx.koMatches||[]).find(m=>m.round_id==="r1");
+  const rodeKaartenVraag=(ctx.bonusQuestions||[]).find(q=>/rode kaart/i.test(q.question||""));
+
+  const [troostWinnaar,setTroostWinnaar]=useState("");
+  const [finaleWinnaar,setFinaleWinnaar]=useState("");
+  const [rodeKaarten,setRodeKaarten]=useState("");
+  const [kampioen,setKampioen]=useState("");
+
+  if(!troostMatch||!troostMatch.home_team||!troostMatch.away_team||!finaleMatch||!finaleMatch.home_team||!finaleMatch.away_team){
+    return(
+      <div>
+        <h3 style={S.h3}>🔮 Scenario-simulator</h3>
+        <div style={S.alert("warn")}>Troostfinale en/of finale-teams zijn nog niet allebei bekend — deze tool werkt pas zodra beide bekend zijn.</div>
+      </div>
+    );
+  }
+
+  const stand=berekenScenarioStand(ctx,{troostWinnaar,finaleWinnaar,rodeKaarten,kampioen});
+  const heeftScenario=troostWinnaar||finaleWinnaar||rodeKaarten!==""||kampioen;
+
+  return(
+    <div>
+      <h3 style={S.h3}>🔮 Scenario-simulator: wie kan de poule nog winnen?</h3>
+      <p style={{fontSize:13,color:"#666",marginBottom:14,lineHeight:1.5}}>
+        Simuleert de virtuele eindstand op basis van hypothetische uitkomsten. Voor de troostfinale en finale telt <strong>alleen de toto</strong> mee (wie wint) — geen exacte score, die marge is bewust buiten beschouwing gelaten. Bonusvragen tellen alleen mee voor deelnemers wiens antwoord <strong>nog niet is beoordeeld</strong>; al beoordeelde antwoorden staan al correct in de "Huidig"-kolom.
+      </p>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12,marginBottom:20}}>
+        <div>
+          <label style={S.label}>Troostfinale winnaar</label>
+          <select style={S.input} value={troostWinnaar} onChange={e=>setTroostWinnaar(e.target.value)}>
+            <option value="">— kies —</option>
+            <option value={troostMatch.home_team}>{troostMatch.home_team}</option>
+            <option value={troostMatch.away_team}>{troostMatch.away_team}</option>
+          </select>
+        </div>
+        <div>
+          <label style={S.label}>Finale winnaar</label>
+          <select style={S.input} value={finaleWinnaar} onChange={e=>setFinaleWinnaar(e.target.value)}>
+            <option value="">— kies —</option>
+            <option value={finaleMatch.home_team}>{finaleMatch.home_team}</option>
+            <option value={finaleMatch.away_team}>{finaleMatch.away_team}</option>
+          </select>
+        </div>
+        <div>
+          <label style={S.label}>Aantal rode kaarten{rodeKaartenVraag?"":" (vraag niet gevonden — check de tekst van de bonusvraag)"}</label>
+          <input type="number" style={S.input} value={rodeKaarten} onChange={e=>setRodeKaarten(e.target.value)} placeholder="bijv. 13"/>
+        </div>
+        <div>
+          <label style={S.label}>Wereldkampioen</label>
+          <select style={S.input} value={kampioen} onChange={e=>setKampioen(e.target.value)}>
+            <option value="">— kies —</option>
+            <option value={finaleMatch.home_team}>{finaleMatch.home_team}</option>
+            <option value={finaleMatch.away_team}>{finaleMatch.away_team}</option>
+          </select>
+        </div>
+      </div>
+
+      {!heeftScenario?(
+        <div style={S.alert("")}>Kies minstens één scenario-onderdeel hierboven om de virtuele eindstand te zien.</div>
+      ):(
+        <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead>
+            <tr style={{background:"#f0faf6"}}>
+              <th style={{textAlign:"left",padding:8,fontSize:12}}>#</th>
+              <th style={{textAlign:"left",padding:8,fontSize:12}}>Naam</th>
+              <th style={{textAlign:"right",padding:8,fontSize:12}}>Huidig</th>
+              <th style={{textAlign:"right",padding:8,fontSize:12}}>Scenario</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stand.slice(0,10).map((r,i)=>(
+              <tr key={r.participant.id} style={{borderTop:`1px solid ${COLORS.border}`,background:i<5?"#f9fffe":"transparent"}}>
+                <td style={{padding:8,fontWeight:800,color:i<5?COLORS.green:"#999"}}>{i+1}</td>
+                <td style={{padding:8}}>{r.participant.first_name} {r.participant.last_name}</td>
+                <td style={{padding:8,textAlign:"right",color:"#999"}}>{r.basis}</td>
+                <td style={{padding:8,textAlign:"right",fontWeight:800}}>{r.scenario}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

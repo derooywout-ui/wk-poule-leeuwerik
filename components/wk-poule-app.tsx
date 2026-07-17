@@ -4757,18 +4757,48 @@ function TournamentTimeline({ctx}){
 
   if(stages.length<2) return null; // te weinig data bekend (bijv. vlak na reset voor een nieuw toernooi)
 
-  const now=new Date();now.setHours(0,0,0,0);
+  const now=tot0uur(new Date());
+
+  // ── "Afgerond" per fase — BUGFIX (9 juli, gemeld door Wout): een fase bleef
+  // voorheen "huidig" totdat de DATUM van de volgende fase aanbrak, ook als de
+  // wedstrijden van de huidige fase al lang gespeeld waren (bijv. na de halve
+  // finales zit er vaak een paar dagen gat tot de troostfinale/finale — in dat
+  // gat bleef "Halve finales" dus ten onrechte oplichten als bezig, terwijl ze
+  // al waren afgelopen). Nu: een KO-ronde is pas "afgerond" als ALLE
+  // wedstrijden van die ronde een uitslag hebben (resultaat-gebaseerd, niet
+  // datum-gebaseerd) — dat schuift de "huidige fase"-markering meteen door
+  // zodra de laatste wedstrijd van een ronde is ingevuld, ongeacht hoeveel
+  // dagen het nog duurt tot de volgende ronde begint.
+  const groepWedstrijdenTotaal=Object.keys(MATCH_SCHEDULE).length;
+  const groepWedstrijdenGespeeld=Object.values(ctx.matchResults||{}).filter(r=>r&&r.home!==null&&r.home!==undefined).length;
+  function rondeAfgerond(roundId){
+    const matches=(ctx.koMatches||[]).filter(m=>m.round_id===roundId);
+    if(matches.length===0) return false;
+    return matches.every(m=>m.home_goals!==null&&m.home_goals!==undefined&&m.away_goals!==null&&m.away_goals!==undefined);
+  }
+  const afgerondMap={
+    start_poule:now>=startPoule,
+    einde_poule:groepWedstrijdenTotaal>0&&groepWedstrijdenGespeeld>=groepWedstrijdenTotaal,
+    begin_ko:(ctx.koMatches||[]).some(m=>m.home_goals!==null&&m.home_goals!==undefined)||(beginKo&&now>=beginKo),
+    r16:rondeAfgerond("r16"), r8:rondeAfgerond("r8"), r4:rondeAfgerond("r4"),
+    r2:rondeAfgerond("r2"), r3:rondeAfgerond("r3"), r1:rondeAfgerond("r1"),
+  };
+
+  // "Huidig" = de EERSTE nog niet afgeronde fase (de grens tussen wel/niet klaar),
+  // niet meer "de laatst afgeronde fase". Zijn alle fases al klaar (toernooi
+  // afgelopen), dan blijft de laatste (Finale) als huidig/afgerond gemarkeerd.
+  let huidigIndex=stages.findIndex(s=>!afgerondMap[s.key]);
+  if(huidigIndex===-1) huidigIndex=stages.length-1;
 
   return(
     <div style={S.card}>
       <h2 style={{...S.h2,marginBottom:16,fontSize:16}}>📍 Waar staan we?</h2>
       <div style={{display:"flex",overflowX:"auto",paddingBottom:6}}>
         {stages.map((s,i)=>{
-          const bereikt=s.date<=now;
-          const volgende=stages[i+1];
-          const isHuidig=bereikt&&(!volgende||volgende.date>now);
+          const bereikt=afgerondMap[s.key]||i<=huidigIndex;
+          const isHuidig=i===huidigIndex;
           const isLast=i===stages.length-1;
-          const lijnGroen=bereikt&&volgende&&volgende.date<=now;
+          const volgendeBereikt=stages[i+1]&&(afgerondMap[stages[i+1].key]||(i+1)<huidigIndex);
           return(
             <div key={s.key} style={{display:"flex",alignItems:"flex-start",flex:isLast?"0 0 auto":"1 1 0%"}}>
               <div style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:74}}>
@@ -4781,7 +4811,7 @@ function TournamentTimeline({ctx}){
                 <div style={{fontSize:10,fontWeight:isHuidig?800:600,color:bereikt?C.dark:C.gray,textAlign:"center",marginTop:6,lineHeight:1.25,maxWidth:78}}>{s.label}</div>
                 <div style={{fontSize:9,color:C.gray,marginTop:2,whiteSpace:"nowrap"}}>{s.date.toLocaleDateString("nl-NL",{day:"numeric",month:"short"})}</div>
               </div>
-              {!isLast&&<div style={{flex:1,height:2,background:lijnGroen?C.green:C.border,minWidth:16,marginTop:5}}/>}
+              {!isLast&&<div style={{flex:1,height:2,background:volgendeBereikt?C.green:C.border,minWidth:16,marginTop:5}}/>}
             </div>
           );
         })}

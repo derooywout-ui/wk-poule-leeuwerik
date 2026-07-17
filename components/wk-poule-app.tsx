@@ -3224,13 +3224,38 @@ function HomeView({setView,ctx}){
                   if(genNaam) kampioenenSet.add(genNaam);
                 });
 
-                // Tel hoe vaak elk land als groepswinnaar (1e plek) wordt voorspeld
+                // BUGFIX (9 juli, gemeld door Wout): dit detecteert een patroon in
+                // VOORSPELLINGEN, die bevroren zijn sinds 11 juni — zonder deze check
+                // bleef een allang uitgeschakeld land (bijv. België, er in week 1 al
+                // uit) hier wekenlang in staan, want de voorspeldata verandert niet.
+                // Nu telt alleen mee wie NOG DAADWERKELIJK in het toernooi zit.
+                function nogActiefInToernooi(land){
+                  const en=NL_TO_EN_ALIAS[land]||land.toLowerCase();
+                  if(!ctx.doorstootLanden||!ctx.doorstootLanden.includes(en)) return false; // nooit doorgestoten uit de groep
+                  const verloren=(ctx.koMatches||[]).some(m=>{
+                    if(m.home_goals===null||m.home_goals===undefined) return false; // nog niet gespeeld
+                    if(m.home_team!==land&&m.away_team!==land) return false;
+                    // Zelfde precedentie als elders in de app: strafschoppen > verlenging > 90 min.
+                    let winnaar=null;
+                    if(m.home_penalties!==null&&m.home_penalties!==undefined&&m.away_penalties!==null&&m.away_penalties!==undefined){
+                      winnaar=m.home_penalties>m.away_penalties?m.home_team:m.away_team;
+                    }else if(m.home_goals_et!==null&&m.home_goals_et!==undefined&&m.home_goals_et!==m.away_goals_et){
+                      winnaar=m.home_goals_et>m.away_goals_et?m.home_team:m.away_team;
+                    }else if(m.home_goals!==m.away_goals){
+                      winnaar=m.home_goals>m.away_goals?m.home_team:m.away_team;
+                    }
+                    return winnaar&&winnaar!==land;
+                  });
+                  return !verloren;
+                }
+
+                // Tel hoe vaak elk (nog actief) land als groepswinnaar (1e plek) wordt voorspeld
                 const groepswinnaarFreq={};
                 ctx.participants.forEach(p=>{
                   const pred=ctx.predictions[p.id]||{};
                   Object.entries(WK_GROUPS).forEach(([grp,teams])=>{
                     const stand=calcGroepsstandFromPred(grp,teams,pred);
-                    if(stand[0]&&stand[0].gespeeld>0){
+                    if(stand[0]&&stand[0].gespeeld>0&&nogActiefInToernooi(stand[0].name)){
                       groepswinnaarFreq[stand[0].name]=(groepswinnaarFreq[stand[0].name]||0)+1;
                     }
                   });
@@ -3250,6 +3275,51 @@ function HomeView({setView,ctx}){
                     prioriteit:Math.min(10, 3 + aantal/4),
                   });
                 }
+              })();
+
+              // ── Detector 6: Finalisten vs. het veld ──
+              // Dynamisch: pakt de 2 landen uit de daadwerkelijke finale (r1),
+              // GEEN hardgecodeerde landnamen — werkt dus voor elk toernooi.
+              // Vergelijkt hoe vaak de finalisten als kampioen zijn getipt met de
+              // populairste land dat NIET de finale heeft gehaald (vaak leuker
+              // contrast dan alleen de kale percentages van de finalisten).
+              (()=>{
+                const finaleMatch=(ctx.koMatches||[]).find(m=>m.round_id==="r1");
+                if(!finaleMatch||!finaleMatch.home_team||!finaleMatch.away_team) return; // finalisten nog niet bekend
+                if(finaleMatch.home_goals!==null&&finaleMatch.home_goals!==undefined) return; // finale al gespeeld — dan is dit geen actueel "wist je dat" meer
+
+                const kampioenAntwoorden=Object.entries(ctx.bonusAnswers)
+                  .map(([pid,answers])=>answers[4])
+                  .filter(Boolean);
+                if(kampioenAntwoorden.length<5) return;
+
+                const freq={};
+                kampioenAntwoorden.forEach(ans=>{
+                  const genNaam=Object.keys(NL_TO_EN_ALIAS).find(nl=>
+                    ans.toLowerCase().trim().includes(nl.toLowerCase()) ||
+                    nl.toLowerCase().includes(ans.toLowerCase().trim())
+                  );
+                  if(genNaam) freq[genNaam]=(freq[genNaam]||0)+1;
+                });
+                const totaal=kampioenAntwoorden.length;
+                const finalisten=[finaleMatch.home_team,finaleMatch.away_team];
+                const pct=(land)=>Math.round((freq[land]||0)/totaal*100);
+                const [fin1,fin2]=finalisten;
+                const pct1=pct(fin1),pct2=pct(fin2);
+
+                // Populairste land dat NIET in de finale staat, als contrast
+                const contrast=Object.entries(freq)
+                  .filter(([land])=>!finalisten.includes(land))
+                  .sort((a,b)=>b[1]-a[1])[0];
+                const contrastPct=contrast?Math.round(contrast[1]/totaal*100):0;
+
+                let tekst;
+                if(contrast&&contrastPct>Math.max(pct1,pct2)){
+                  tekst=<>Met <strong>{fin1}</strong> en <strong>{fin2}</strong> in de finale: {fin1} werd door <strong>{pct1}%</strong> getipt als kampioen, {fin2} door <strong>{pct2}%</strong> — <strong>{contrast[0]}</strong>, allang uitgeschakeld, was met <strong>{contrastPct}%</strong> nog altijd populairder.</>;
+                }else{
+                  tekst=<>Met <strong>{fin1}</strong> en <strong>{fin2}</strong> in de finale: {fin1} werd door <strong>{pct1}%</strong> van de deelnemers getipt als kampioen, {fin2} door <strong>{pct2}%</strong>.</>;
+                }
+                kandidaten.push({icon:"🏁",tekst,prioriteit:9});
               })();
 
               if(kandidaten.length===0) return null;

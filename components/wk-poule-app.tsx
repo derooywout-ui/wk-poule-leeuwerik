@@ -4061,8 +4061,22 @@ function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
       const canvas = document.getElementById(chartId);
       if(!canvas) return;
 
-      const wkStart = new Date(2026,5,11).getTime();
-      const wkEind = new Date(2026,6,19).getTime();
+      // BUGFIX (10 juli, gemeld door Wout): wkStart/wkEind stonden hardgecodeerd
+      // op 11 juni – 19 juli. Als de finale door verlenging pas op 20 juli
+      // definitief wordt (en dus een ranking-snapshot met een created_at ná
+      // 19 juli krijgt), viel dat laatste — en juist grootste — datapunt buiten
+      // de x-as en werd het niet getekend. Nu dynamisch afgeleid uit de
+      // daadwerkelijke datapunten van déze deelnemer, met wat padding zodat het
+      // eerste/laatste punt niet precies op de rand van de grafiek valt. Werkt
+      // zo automatisch door, ongeacht hoe laat de laatste wedstrijd uiteindelijk
+      // definitief wordt — en ook meteen correct bij een volgend toernooi.
+      const dataTimestamps = dataPunten.map(p=>tsVan(p));
+      const dataMin = Math.min(...dataTimestamps);
+      const dataMax = Math.max(...dataTimestamps);
+      const dagInMs = 24*60*60*1000;
+      const padding = Math.max((dataMax-dataMin)*0.03, dagInMs);
+      const wkStart = dataMin - padding;
+      const wkEind = dataMax + padding;
 
       const maanden=["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"];
       function fmtDate(ts){
@@ -4118,7 +4132,7 @@ function RankingLijngrafiek({participantId, rankingSnapshot, totaalDeelnemers}){
                 autoSkip:true,maxTicksLimit:8,
               },
               grid:{display:false},border:{display:false},
-              title:{display:true,text:"Datum (WK 11 jun – 19 jul)",color:textColor,font:{size:11}},
+              title:{display:true,text:`Datum (WK ${fmtDate(dataMin)} – ${fmtDate(dataMax)})`,color:textColor,font:{size:11}},
             },
             y:{
               reverse:true,min:yMin,max:yMax,

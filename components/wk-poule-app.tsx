@@ -4419,27 +4419,39 @@ function DeelnemerOverlay({p, ctx, onClose}){
   })();
   const doorstootPuntenTotaal = doorstootDetail.filter(d=>d.doorgestoten && !d.gemist).length * DOORSTOOT_PTS;
 
-  // ── Poule-breed gemiddelde + score van de koploper, per categorie ──
-  // Op verzoek van Wout: achter elk puntenblokje "(gemiddeld: X, leider: Y)".
-  // "Leider" = de score van de HUIDIGE KOPLOPER (hoogste totaal) in díe ene
-  // categorie — zelfde interpretatie als de "Winnaar"-kolom in het Louis-schema
-  // (berekenLouisSchema): het gaat om wat de koploper zelf scoorde in dit
-  // onderdeel, niet per se het hoogste cijfer dat ooit in die categorie viel
-  // (die twee kunnen verschillen — een ander dan de koploper kan toevallig de
-  // meeste doorstootpunten hebben, maar toch niet bovenaan staan).
+  // ── Poule-breed gemiddelde, topscore én score van de koploper, per categorie ──
+  // Op verzoek van Wout: 3 vergelijkingen naast elkaar, elk met het verschil
+  // t.o.v. de eigen score van deze deelnemer (+/-, of "-" bij precies gelijk).
+  // "Topscore categorie" = het hoogste cijfer in DIE categorie, ongeacht wie dat
+  // is; "leider/winnaar klassement" = wat de huidige koploper (hoogste totaal)
+  // zelf in die categorie scoorde — dat kan van elkaar verschillen.
   const alleTotalenOverlay = berekenAllePuntenTotalen(ctx);
   let koploperOverlay=null, hoogsteTotaalOverlay=-Infinity;
   alleTotalenOverlay.forEach(t=>{ if(t.qTotaal>hoogsteTotaalOverlay){hoogsteTotaalOverlay=t.qTotaal;koploperOverlay=t;} });
-  function gemLeider(fn){
+  function fmtDiff(deelWaarde,vergelijkWaarde){
+    const diff=deelWaarde-vergelijkWaarde;
+    if(diff===0) return "-";
+    return diff>0?`+${diff}`:`${diff}`;
+  }
+  function statVoorCategorie(fn,deelnemerWaarde){
     const waarden=alleTotalenOverlay.map(fn);
     const gem=waarden.length?Math.round(waarden.reduce((s,v)=>s+v,0)/waarden.length):0;
+    const topscore=waarden.length?Math.max(...waarden):0;
     const leiderWaarde=koploperOverlay?fn(koploperOverlay):0;
-    return {gem,leiderWaarde};
+    return {
+      gem, topscore, leiderWaarde,
+      diffGem:fmtDiff(deelnemerWaarde,gem),
+      diffTop:fmtDiff(deelnemerWaarde,topscore),
+      diffLeider:fmtDiff(deelnemerWaarde,leiderWaarde),
+    };
   }
-  const statGroep=gemLeider(t=>t.qGToto+t.qGExact);
-  const statDoorstoot=gemLeider(t=>t.qGDoorstoot);
-  const statKO=gemLeider(t=>t.qKoToto+t.qKoExact);
-  const statBonus=gemLeider(t=>t.qBonus);
+  const statGroep=statVoorCategorie(t=>t.qGToto+t.qGExact, ptsGroep);
+  const statDoorstoot=statVoorCategorie(t=>t.qGDoorstoot, doorstootPuntenTotaal);
+  const statKO=statVoorCategorie(t=>t.qKoToto+t.qKoExact, ptsKO);
+  const statBonus=statVoorCategorie(t=>t.qBonus, ptsBonusTotal);
+  function statTekst(s){
+    return `gemiddeld: ${s.gem} (${s.diffGem}), topscore categorie: ${s.topscore} (${s.diffTop}), leider/winnaar klassement: ${s.leiderWaarde} (${s.diffLeider})`;
+  }
 
   // Van de gespeelde wedstrijden: hoeveel had deze deelnemer ook echt ingevuld
   // (i.p.v. leeg gelaten) — geeft een directe indicatie van wat is blijven liggen.
@@ -4486,18 +4498,17 @@ function DeelnemerOverlay({p, ctx, onClose}){
             <div style={{background:"#f0faf6",padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
               <span style={{fontSize:11,fontWeight:800,color:C.green,textTransform:"uppercase",letterSpacing:0.5}}>Scores</span>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:0}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr",gap:0}}>
               {[
                 {label:"Gespeelde wedstrijden",val:played.length+ctx.koMatches.filter(m=>m.home_goals!==null&&m.home_goals!==undefined).length,sub:`(waarvan ${gespeeldTotaalVoorspeld} voorspeld)`,icon:"⚽"},
-                {label:"Punten groepsfase",val:ptsGroep,sub:`(gemiddeld: ${statGroep.gem} punten, leider: ${statGroep.leiderWaarde} punten)`,icon:"⭐"},
-                {label:"Punten doorstoot",val:doorstootPuntenTotaal,sub:`(gemiddeld: ${statDoorstoot.gem} punten, leider: ${statDoorstoot.leiderWaarde} punten)`,icon:"🏆"},
-                {label:"Punten KO fase",val:ptsKO,sub:`(gemiddeld: ${statKO.gem} punten, leider: ${statKO.leiderWaarde} punten)`,icon:"⚡"},
-                {label:"Punten bonusvragen",val:ptsBonusTotal,sub:`(gemiddeld: ${statBonus.gem} punten, leider: ${statBonus.leiderWaarde} punten)`,icon:"🎁"},
+                {label:"Punten groepsfase",val:ptsGroep,sub:statTekst(statGroep),icon:"⭐"},
+                {label:"Punten doorstoot",val:doorstootPuntenTotaal,sub:statTekst(statDoorstoot),icon:"🏆"},
+                {label:"Punten KO fase",val:ptsKO,sub:statTekst(statKO),icon:"⚡"},
+                {label:"Punten bonusvragen",val:ptsBonusTotal,sub:statTekst(statBonus),icon:"🎁"},
               ].map((item,i)=>(
                 <div key={i} style={{
                   padding:"12px 14px",display:"flex",alignItems:"flex-start",gap:10,
-                  borderBottom:i<3?`1px solid ${C.border}`:"none",
-                  borderRight:i%2===0?`1px solid ${C.border}`:"none",
+                  borderBottom:i<4?`1px solid ${C.border}`:"none",
                 }}>
                   <span style={{fontSize:18,flexShrink:0,marginTop:1}}>{item.icon}</span>
                   <div>

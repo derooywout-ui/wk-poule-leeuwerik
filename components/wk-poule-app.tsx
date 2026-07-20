@@ -4419,6 +4419,32 @@ function DeelnemerOverlay({p, ctx, onClose}){
   })();
   const doorstootPuntenTotaal = doorstootDetail.filter(d=>d.doorgestoten && !d.gemist).length * DOORSTOOT_PTS;
 
+  // ── Poule-breed gemiddelde + score van de koploper, per categorie ──
+  // Op verzoek van Wout: achter elk puntenblokje "(gemiddeld: X, leider: Y)".
+  // "Leider" = de score van de HUIDIGE KOPLOPER (hoogste totaal) in díe ene
+  // categorie — zelfde interpretatie als de "Winnaar"-kolom in het Louis-schema
+  // (berekenLouisSchema): het gaat om wat de koploper zelf scoorde in dit
+  // onderdeel, niet per se het hoogste cijfer dat ooit in die categorie viel
+  // (die twee kunnen verschillen — een ander dan de koploper kan toevallig de
+  // meeste doorstootpunten hebben, maar toch niet bovenaan staan).
+  const alleTotalenOverlay = berekenAllePuntenTotalen(ctx);
+  let koploperOverlay=null, hoogsteTotaalOverlay=-Infinity;
+  alleTotalenOverlay.forEach(t=>{ if(t.qTotaal>hoogsteTotaalOverlay){hoogsteTotaalOverlay=t.qTotaal;koploperOverlay=t;} });
+  function gemLeider(fn){
+    const waarden=alleTotalenOverlay.map(fn);
+    const gem=waarden.length?Math.round(waarden.reduce((s,v)=>s+v,0)/waarden.length):0;
+    const leiderWaarde=koploperOverlay?fn(koploperOverlay):0;
+    return {gem,leiderWaarde};
+  }
+  const statGroep=gemLeider(t=>t.qGToto+t.qGExact);
+  const statDoorstoot=gemLeider(t=>t.qGDoorstoot);
+  const statKO=gemLeider(t=>t.qKoToto+t.qKoExact);
+  const statBonus=gemLeider(t=>t.qBonus);
+
+  // Van de gespeelde wedstrijden: hoeveel had deze deelnemer ook echt ingevuld
+  // (i.p.v. leeg gelaten) — geeft een directe indicatie van wat is blijven liggen.
+  const gespeeldTotaalVoorspeld = played.filter(m=>m.hasPred).length + playedKO.filter(m=>m.hasPred).length;
+
   // Sluit bij klik buiten overlay
   function handleBackdrop(e){if(e.target===e.currentTarget)onClose();}
 
@@ -4462,21 +4488,22 @@ function DeelnemerOverlay({p, ctx, onClose}){
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:0}}>
               {[
-                {label:"Gespeelde wedstrijden",val:played.length+ctx.koMatches.filter(m=>m.home_goals!==null&&m.home_goals!==undefined).length,icon:"⚽"},
-                {label:"Punten groepsfase",val:ptsGroep,icon:"⭐"},
-                {label:"Punten doorstoot",val:doorstootPuntenTotaal,icon:"🏆"},
-                {label:"Punten KO fase",val:ptsKO,icon:"⚡"},
-                {label:"Punten bonusvragen",val:ptsBonusTotal,icon:"🎁"},
+                {label:"Gespeelde wedstrijden",val:played.length+ctx.koMatches.filter(m=>m.home_goals!==null&&m.home_goals!==undefined).length,sub:`(waarvan ${gespeeldTotaalVoorspeld} voorspeld)`,icon:"⚽"},
+                {label:"Punten groepsfase",val:ptsGroep,sub:`(gemiddeld: ${statGroep.gem} punten, leider: ${statGroep.leiderWaarde} punten)`,icon:"⭐"},
+                {label:"Punten doorstoot",val:doorstootPuntenTotaal,sub:`(gemiddeld: ${statDoorstoot.gem} punten, leider: ${statDoorstoot.leiderWaarde} punten)`,icon:"🏆"},
+                {label:"Punten KO fase",val:ptsKO,sub:`(gemiddeld: ${statKO.gem} punten, leider: ${statKO.leiderWaarde} punten)`,icon:"⚡"},
+                {label:"Punten bonusvragen",val:ptsBonusTotal,sub:`(gemiddeld: ${statBonus.gem} punten, leider: ${statBonus.leiderWaarde} punten)`,icon:"🎁"},
               ].map((item,i)=>(
                 <div key={i} style={{
-                  padding:"12px 14px",display:"flex",alignItems:"center",gap:10,
+                  padding:"12px 14px",display:"flex",alignItems:"flex-start",gap:10,
                   borderBottom:i<3?`1px solid ${C.border}`:"none",
                   borderRight:i%2===0?`1px solid ${C.border}`:"none",
                 }}>
-                  <span style={{fontSize:18,flexShrink:0}}>{item.icon}</span>
+                  <span style={{fontSize:18,flexShrink:0,marginTop:1}}>{item.icon}</span>
                   <div>
                     <div style={{fontSize:10,color:C.gray}}>{item.label}</div>
                     <div style={{fontSize:17,fontWeight:800,color:C.green}}>{item.val}</div>
+                    {item.sub&&<div style={{fontSize:10,color:C.gray,marginTop:1}}>{item.sub}</div>}
                   </div>
                 </div>
               ))}

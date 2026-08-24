@@ -1,0 +1,31 @@
+name: Supabase Keep-Alive
+
+# Tweede, onafhankelijke hartslag naast de Vercel-cron (/api/keepalive) — draait
+# volledig los van Vercel, dus als daar iets mis is (cron die niet afgaat,
+# account-problemen, wat dan ook), blijft Supabase via dit kanaal alsnog actief.
+# Pingt rechtstreeks de Supabase REST API met de publieke anon-key (geen nieuw
+# geheim nodig — dezelfde key die toch al in de client-bundle staat).
+
+"on":
+  schedule:
+    - cron: "0 9 * * *"   # dagelijks 09:00 UTC
+  workflow_dispatch:        # handmatig te starten via de Actions-tab, voor een directe test
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase (participants, 1 rij)
+        run: |
+          HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+            "https://votagyldoiubrffnkokr.supabase.co/rest/v1/participants?select=id&limit=1" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+          echo "HTTP status: $HTTP_CODE"
+          cat /tmp/response.json
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "::error::Supabase-ping mislukt (status $HTTP_CODE) — check of de anon-key nog geldig is."
+            exit 1
+          fi
+        env:
+          SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvdGFneWxkb2l1YnJmZm5rb2tyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3Mjc3MzcsImV4cCI6MjA5NTMwMzczN30.ezW6V8Peegrxac83HNmN21Yo6sISEWkuTdZuD2lYL-s
